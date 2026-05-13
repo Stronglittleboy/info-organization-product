@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: info-organization-backend
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: ${DB_URL:jdbc:postgresql://wangliang.dns.army:55432/info_organization}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    db-config:
+      id-type: assign_uuid
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+jwt:
+  secret: ${JWT_SECRET:your-secret-key-change-in-production-min-256-bits-long}
+  expiration: 86400000
+
+logging:
+  level:
+    root: INFO
+    com.example.infoorg: DEBUG
+  file:
+    name: logs/application.log

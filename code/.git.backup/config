@@ -1,0 +1,11 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+[user]
+	name = Hou Longwang
+	email = houlongwang@local.dev
+[remote "origin"]
+	url = git@github.com:Stronglittleboy/info-organization-product-code.git
+	fetch = +refs/heads/*:refs/remotes/origin/*

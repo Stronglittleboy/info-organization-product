@@ -1,0 +1,6 @@
+0000000000000000000000000000000000000000 921514c0097ed4d1efb4d709512ca05a159792d4 Hou Longwang <houlongwang@local.dev> 1778377419 +0800	commit (initial): chore: initialize project skeleton and env setup
+921514c0097ed4d1efb4d709512ca05a159792d4 6c387a9ce2758582f399e41ad24684b266eed2e4 Hou Longwang <houlongwang@local.dev> 1778378065 +0800	commit: chore: verify backend framework and switch service host config
+6c387a9ce2758582f399e41ad24684b266eed2e4 ca9fe751d26eb09ae1ce956803381e3d716d66c6 Hou Longwang <houlongwang@local.dev> 1778378246 +0800	commit: feat: add collect entry backend minimal closed loop
+ca9fe751d26eb09ae1ce956803381e3d716d66c6 ea69548b2fee4c0223adc5a3a5f09f1264b4789f Hou Longwang <houlongwang@local.dev> 1778379218 +0800	commit: feat: add collect page frontend minimal closed loop
+ea69548b2fee4c0223adc5a3a5f09f1264b4789f adbe689c35eef0079f1abd756cdab3b19ba4376f Hou Longwang <houlongwang@local.dev> 1778392091 +0800	commit: feat: persist collect entries and wire recent list
+adbe689c35eef0079f1abd756cdab3b19ba4376f bf8ab8e3bf53de6bbc46935c31309955e6f59a22 Hou Longwang <houlongwang@local.dev> 1778396878 +0800	commit: feat: add topic classification flow for collect page
