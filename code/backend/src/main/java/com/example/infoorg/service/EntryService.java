@@ -21,4 +21,10 @@ public interface EntryService {
     void skipEntry(String entryId);
 
     EntryResponse getEntryById(String entryId);
+
+    PageResponse<EntryResponse> searchEntries(String keyword, String topicId, Boolean hasInsight, int offset, int limit);
+
+    void recordReuse(String entryId, String reuseType);
+
+    PageResponse<EntryResponse> getEntriesByTopicId(String topicId, int offset, int limit);
 }

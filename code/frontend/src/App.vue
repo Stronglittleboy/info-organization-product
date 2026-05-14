@@ -11,14 +11,29 @@
             收集
           </router-link>
           <router-link
-            to="/pending"
+            to="/search"
             class="nav-link"
+            :class="{ active: $route.name === 'search' }"
+          >
+            查找
+          </router-link>
+        </div>
+        <div class="nav-right">
+          <router-link
+            to="/pending"
+            class="nav-link-secondary"
             :class="{ active: $route.name === 'pending' }"
           >
             待处理
           </router-link>
+          <router-link
+            to="/topics"
+            class="nav-link-secondary"
+            :class="{ active: $route.name === 'topics' || $route.name === 'topicDetail' }"
+          >
+            专题
+          </router-link>
         </div>
-        <div class="nav-brand">信息整理</div>
       </div>
     </nav>
     <main class="main-content">
@@ -80,10 +95,23 @@ body {
   color: #409eff;
   border-bottom-color: #409eff;
 }
-.nav-brand {
-  font-size: 14px;
-  color: #c0c4cc;
+.nav-right {
+  display: flex;
+  gap: 16px;
+}
+.nav-link-secondary {
+  font-size: 13px;
   font-weight: 500;
+  color: #c0c4cc;
+  text-decoration: none;
+  padding: 14px 0;
+  transition: all .2s;
+}
+.nav-link-secondary:hover {
+  color: #606266;
+}
+.nav-link-secondary.active {
+  color: #409eff;
 }
 .main-content {
   padding-top: 8px;

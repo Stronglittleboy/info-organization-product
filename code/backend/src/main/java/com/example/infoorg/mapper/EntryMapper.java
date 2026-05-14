@@ -149,4 +149,97 @@ public interface EntryMapper {
             """)
     @ResultMap("entryResult")
     Entry selectById(@Param("entryId") String entryId);
+
+    @Select("""
+            <script>
+            SELECT
+              e.id::text AS id,
+              e.user_id::text AS user_id,
+              e.raw_content,
+              e.content_type,
+              e.source_type,
+              e.source_title,
+              e.source_link,
+              e.captured_at,
+              e.insight_text,
+              e.topic_id::text AS topic_id,
+              t.name AS topic_name,
+              e.deleted,
+              e.created_at,
+              e.updated_at
+            FROM entries e
+            LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
+            WHERE e.deleted = 0
+              AND e.user_id = CAST(#{userId} AS uuid)
+              AND (e.raw_content ILIKE '%' || #{keyword} || '%'
+                   OR e.insight_text ILIKE '%' || #{keyword} || '%'
+                   OR e.source_title ILIKE '%' || #{keyword} || '%')
+              <if test="topicId != null"> AND e.topic_id = CAST(#{topicId} AS uuid)</if>
+              <if test="hasInsight != null and hasInsight"> AND e.insight_text IS NOT NULL</if>
+              <if test="hasInsight != null and !hasInsight"> AND e.insight_text IS NULL</if>
+            ORDER BY e.captured_at DESC
+            LIMIT #{limit} OFFSET #{offset}
+            </script>
+            """)
+    @ResultMap("entryResult")
+    List<Entry> searchEntries(@Param("userId") String userId,
+                              @Param("keyword") String keyword,
+                              @Param("topicId") String topicId,
+                              @Param("hasInsight") Boolean hasInsight,
+                              @Param("offset") int offset,
+                              @Param("limit") int limit);
+
+    @Select("""
+            <script>
+            SELECT COUNT(*)
+            FROM entries e
+            WHERE e.deleted = 0
+              AND e.user_id = CAST(#{userId} AS uuid)
+              AND (e.raw_content ILIKE '%' || #{keyword} || '%'
+                   OR e.insight_text ILIKE '%' || #{keyword} || '%'
+                   OR e.source_title ILIKE '%' || #{keyword} || '%')
+              <if test="topicId != null"> AND e.topic_id = CAST(#{topicId} AS uuid)</if>
+              <if test="hasInsight != null and hasInsight"> AND e.insight_text IS NOT NULL</if>
+              <if test="hasInsight != null and !hasInsight"> AND e.insight_text IS NULL</if>
+            </script>
+            """)
+    long countSearchEntries(@Param("userId") String userId,
+                            @Param("keyword") String keyword,
+                            @Param("topicId") String topicId,
+                            @Param("hasInsight") Boolean hasInsight);
+
+    @Select("""
+            SELECT
+              e.id::text AS id,
+              e.user_id::text AS user_id,
+              e.raw_content,
+              e.content_type,
+              e.source_type,
+              e.source_title,
+              e.source_link,
+              e.captured_at,
+              e.insight_text,
+              e.topic_id::text AS topic_id,
+              t.name AS topic_name,
+              e.deleted,
+              e.created_at,
+              e.updated_at
+            FROM entries e
+            LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
+            WHERE e.deleted = 0
+              AND e.topic_id = CAST(#{topicId} AS uuid)
+            ORDER BY e.captured_at DESC
+            LIMIT #{limit} OFFSET #{offset}
+            """)
+    @ResultMap("entryResult")
+    List<Entry> selectByTopicId(@Param("topicId") String topicId,
+                                @Param("offset") int offset,
+                                @Param("limit") int limit);
+
+    @Select("""
+            SELECT COUNT(*)
+            FROM entries
+            WHERE deleted = 0 AND topic_id = CAST(#{topicId} AS uuid)
+            """)
+    long countByTopicId(@Param("topicId") String topicId);
 }

@@ -11,4 +11,6 @@ public interface TopicService {
     List<TopicResponse> searchTopics(String keyword, int limit);
 
     TopicResponse createTopic(String name, String description);
+
+    TopicResponse getTopicById(String topicId);
 }

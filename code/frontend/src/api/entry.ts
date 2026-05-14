@@ -62,3 +62,31 @@ export async function createTopic(name: string, description?: string) {
   const response = await http.post<TopicResponse>('/topics', { name, description })
   return response.data
 }
+
+export async function searchEntries(params: {
+  keyword: string
+  topicId?: string
+  hasInsight?: boolean
+  offset?: number
+  limit?: number
+}) {
+  const response = await http.get<PageResponse<EntryResponse>>('/entries/search', { params })
+  return response.data
+}
+
+export async function recordReuse(entryId: string, reuseType: string) {
+  const response = await http.post<{ success: boolean }>(`/entries/${entryId}/reuse`, { reuseType })
+  return response.data
+}
+
+export async function getTopicDetail(topicId: string) {
+  const response = await http.get<TopicResponse>(`/topics/${topicId}`)
+  return response.data
+}
+
+export async function getTopicEntries(topicId: string, offset = 0, limit = 20) {
+  const response = await http.get<PageResponse<EntryResponse>>(`/topics/${topicId}/entries`, {
+    params: { offset, limit }
+  })
+  return response.data
+}

@@ -61,4 +61,22 @@ public class EntryController {
         entryService.skipEntry(entryId);
         return Map.of("success", true);
     }
+
+    @GetMapping("/entries/search")
+    public PageResponse<EntryResponse> searchEntries(
+            @RequestParam String keyword,
+            @RequestParam(required = false) String topicId,
+            @RequestParam(required = false) Boolean hasInsight,
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "20") int limit) {
+        return entryService.searchEntries(keyword, topicId, hasInsight, offset, limit);
+    }
+
+    @PostMapping("/entries/{entryId}/reuse")
+    public Map<String, Boolean> recordReuse(@PathVariable String entryId,
+                                            @RequestBody Map<String, String> body) {
+        String reuseType = body.getOrDefault("reuseType", "copy");
+        entryService.recordReuse(entryId, reuseType);
+        return Map.of("success", true);
+    }
 }

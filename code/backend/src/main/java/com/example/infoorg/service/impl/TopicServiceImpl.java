@@ -59,6 +59,15 @@ public class TopicServiceImpl implements TopicService {
         return toResponse(topic);
     }
 
+    @Override
+    public TopicResponse getTopicById(String topicId) {
+        Topic topic = topicMapper.selectById(topicId);
+        if (topic == null) {
+            throw new RuntimeException("Topic not found: " + topicId);
+        }
+        return toResponse(topic);
+    }
+
     private TopicResponse toResponse(Topic topic) {
         return TopicResponse.builder()
                 .topicId(topic.getId())

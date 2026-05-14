@@ -101,16 +101,19 @@ public interface TopicMapper {
     long countTopics(@Param("userId") String userId);
 
     @Select("""
-            SELECT id::text AS id,
-                   user_id::text AS user_id,
-                   name,
-                   description,
-                   created_at,
-                   updated_at,
-                   deleted
-            FROM topics
-            WHERE id = CAST(#{topicId} AS uuid) AND deleted = 0
+            SELECT t.id::text AS id,
+                   t.user_id::text AS user_id,
+                   t.name,
+                   t.description,
+                   t.created_at,
+                   t.updated_at,
+                   t.deleted,
+                   COUNT(e.id) AS entry_count
+            FROM topics t
+            LEFT JOIN entries e ON e.topic_id = t.id AND e.deleted = 0
+            WHERE t.id = CAST(#{topicId} AS uuid) AND t.deleted = 0
+            GROUP BY t.id
             """)
-    @ResultMap("topicResult")
+    @ResultMap("topicWithCount")
     Topic selectById(@Param("topicId") String topicId);
 }

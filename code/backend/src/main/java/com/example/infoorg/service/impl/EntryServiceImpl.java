@@ -7,6 +7,7 @@ import com.example.infoorg.dto.response.PendingEntryResponse;
 import com.example.infoorg.entity.Entry;
 import com.example.infoorg.entity.Topic;
 import com.example.infoorg.mapper.EntryMapper;
+import com.example.infoorg.mapper.ReuseRecordMapper;
 import com.example.infoorg.mapper.TopicMapper;
 import com.example.infoorg.service.EntryService;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ public class EntryServiceImpl implements EntryService {
     private static final String DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
     private final EntryMapper entryMapper;
     private final TopicMapper topicMapper;
+    private final ReuseRecordMapper reuseRecordMapper;
 
     @Override
     public EntryResponse createEntry(CreateEntryRequest request) {
@@ -104,6 +106,47 @@ public class EntryServiceImpl implements EntryService {
             throw new RuntimeException("Entry not found: " + entryId);
         }
         return toResponse(entry);
+    }
+
+    @Override
+    public PageResponse<EntryResponse> searchEntries(String keyword, String topicId, Boolean hasInsight, int offset, int limit) {
+        List<Entry> entries = entryMapper.searchEntries(DEFAULT_USER_ID, keyword, topicId, hasInsight, offset, limit);
+        long total = entryMapper.countSearchEntries(DEFAULT_USER_ID, keyword, topicId, hasInsight);
+
+        List<EntryResponse> items = entries.stream()
+                .map(this::toResponse)
+                .toList();
+
+        return PageResponse.<EntryResponse>builder()
+                .items(items)
+                .total(total)
+                .hasMore(offset + limit < total)
+                .build();
+    }
+
+    @Override
+    public void recordReuse(String entryId, String reuseType) {
+        Entry entry = entryMapper.selectById(entryId);
+        if (entry == null) {
+            throw new RuntimeException("Entry not found: " + entryId);
+        }
+        reuseRecordMapper.insertReuseRecord(UUID.randomUUID().toString(), entryId, DEFAULT_USER_ID, reuseType);
+    }
+
+    @Override
+    public PageResponse<EntryResponse> getEntriesByTopicId(String topicId, int offset, int limit) {
+        List<Entry> entries = entryMapper.selectByTopicId(topicId, offset, limit);
+        long total = entryMapper.countByTopicId(topicId);
+
+        List<EntryResponse> items = entries.stream()
+                .map(this::toResponse)
+                .toList();
+
+        return PageResponse.<EntryResponse>builder()
+                .items(items)
+                .total(total)
+                .hasMore(offset + limit < total)
+                .build();
     }
 
     private Topic resolveTopic(String topicName) {

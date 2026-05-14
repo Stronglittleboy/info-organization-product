@@ -1,7 +1,9 @@
 package com.example.infoorg.controller;
 
+import com.example.infoorg.dto.response.EntryResponse;
 import com.example.infoorg.dto.response.PageResponse;
 import com.example.infoorg.dto.response.TopicResponse;
+import com.example.infoorg.service.EntryService;
 import com.example.infoorg.service.TopicService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -14,6 +16,7 @@ import java.util.Map;
 public class TopicController {
 
     private final TopicService topicService;
+    private final EntryService entryService;
 
     @GetMapping("/topics")
     public PageResponse<TopicResponse> getTopicList(
@@ -37,5 +40,18 @@ public class TopicController {
             throw new RuntimeException("Topic name is required");
         }
         return topicService.createTopic(name, description);
+    }
+
+    @GetMapping("/topics/{topicId}")
+    public TopicResponse getTopicDetail(@PathVariable String topicId) {
+        return topicService.getTopicById(topicId);
+    }
+
+    @GetMapping("/topics/{topicId}/entries")
+    public PageResponse<EntryResponse> getTopicEntries(
+            @PathVariable String topicId,
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "20") int limit) {
+        return entryService.getEntriesByTopicId(topicId, offset, limit);
     }
 }
