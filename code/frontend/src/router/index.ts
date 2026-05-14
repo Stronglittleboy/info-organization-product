@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import CollectPage from '@/views/CollectPage.vue'
+import PendingPage from '@/views/PendingPage.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -12,6 +13,11 @@ const router = createRouter({
       path: '/collect',
       name: 'collect',
       component: CollectPage
+    },
+    {
+      path: '/pending',
+      name: 'pending',
+      component: PendingPage
     }
   ]
 })

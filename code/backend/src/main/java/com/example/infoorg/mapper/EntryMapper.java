@@ -1,11 +1,7 @@
 package com.example.infoorg.mapper;
 
 import com.example.infoorg.entity.Entry;
-import org.apache.ibatis.annotations.Insert;
-import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Result;
-import org.apache.ibatis.annotations.Results;
-import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.*;
 
 import java.util.List;
 
@@ -69,4 +65,88 @@ public interface EntryMapper {
             @Result(column = "updated_at", property = "updatedAt")
     })
     List<Entry> selectRecentEntries();
+
+    @Update("""
+            UPDATE entries
+            SET insight_text = #{insightText}
+            WHERE id = CAST(#{entryId} AS uuid) AND deleted = 0
+            """)
+    int updateInsightText(@Param("entryId") String entryId, @Param("insightText") String insightText);
+
+    @Update("""
+            UPDATE entries
+            SET topic_id = CAST(#{topicId} AS uuid)
+            WHERE id = CAST(#{entryId} AS uuid) AND deleted = 0
+            """)
+    int updateTopicId(@Param("entryId") String entryId, @Param("topicId") String topicId);
+
+    @Select("""
+            SELECT
+              e.id::text AS id,
+              e.user_id::text AS user_id,
+              e.raw_content,
+              e.content_type,
+              e.source_type,
+              e.source_title,
+              e.source_link,
+              e.captured_at,
+              e.insight_text,
+              e.topic_id::text AS topic_id,
+              t.name AS topic_name,
+              e.deleted,
+              e.created_at,
+              e.updated_at
+            FROM entries e
+            LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
+            WHERE e.deleted = 0
+              AND e.user_id = CAST(#{userId} AS uuid)
+              AND (e.insight_text IS NULL OR e.topic_id IS NULL)
+              AND (e.skipped_at IS NULL OR e.skipped_at < NOW() - INTERVAL '24 hours')
+            ORDER BY e.captured_at DESC
+            LIMIT #{limit} OFFSET #{offset}
+            """)
+    @ResultMap("entryResult")
+    List<Entry> selectPendingEntries(@Param("userId") String userId,
+                                     @Param("offset") int offset,
+                                     @Param("limit") int limit);
+
+    @Select("""
+            SELECT COUNT(*)
+            FROM entries
+            WHERE deleted = 0
+              AND user_id = CAST(#{userId} AS uuid)
+              AND (insight_text IS NULL OR topic_id IS NULL)
+              AND (skipped_at IS NULL OR skipped_at < NOW() - INTERVAL '24 hours')
+            """)
+    long countPendingEntries(@Param("userId") String userId);
+
+    @Update("""
+            UPDATE entries
+            SET skipped_at = NOW(), skip_count = skip_count + 1
+            WHERE id = CAST(#{entryId} AS uuid) AND deleted = 0
+            """)
+    int skipEntry(@Param("entryId") String entryId);
+
+    @Select("""
+            SELECT
+              e.id::text AS id,
+              e.user_id::text AS user_id,
+              e.raw_content,
+              e.content_type,
+              e.source_type,
+              e.source_title,
+              e.source_link,
+              e.captured_at,
+              e.insight_text,
+              e.topic_id::text AS topic_id,
+              t.name AS topic_name,
+              e.deleted,
+              e.created_at,
+              e.updated_at
+            FROM entries e
+            LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
+            WHERE e.id = CAST(#{entryId} AS uuid) AND e.deleted = 0
+            """)
+    @ResultMap("entryResult")
+    Entry selectById(@Param("entryId") String entryId);
 }

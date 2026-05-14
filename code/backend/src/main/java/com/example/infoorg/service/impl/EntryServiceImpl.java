@@ -2,6 +2,8 @@ package com.example.infoorg.service.impl;
 
 import com.example.infoorg.dto.request.CreateEntryRequest;
 import com.example.infoorg.dto.response.EntryResponse;
+import com.example.infoorg.dto.response.PageResponse;
+import com.example.infoorg.dto.response.PendingEntryResponse;
 import com.example.infoorg.entity.Entry;
 import com.example.infoorg.entity.Topic;
 import com.example.infoorg.mapper.EntryMapper;
@@ -51,6 +53,59 @@ public class EntryServiceImpl implements EntryService {
                 .toList();
     }
 
+    @Override
+    public void updateInsight(String entryId, String insightText) {
+        int rows = entryMapper.updateInsightText(entryId, insightText);
+        if (rows == 0) {
+            throw new RuntimeException("Entry not found: " + entryId);
+        }
+    }
+
+    @Override
+    public void updateTopic(String entryId, String topicId) {
+        Topic topic = topicMapper.selectById(topicId);
+        if (topic == null) {
+            throw new RuntimeException("Topic not found: " + topicId);
+        }
+        int rows = entryMapper.updateTopicId(entryId, topicId);
+        if (rows == 0) {
+            throw new RuntimeException("Entry not found: " + entryId);
+        }
+    }
+
+    @Override
+    public PageResponse<PendingEntryResponse> getPendingEntries(int offset, int limit) {
+        List<Entry> entries = entryMapper.selectPendingEntries(DEFAULT_USER_ID, offset, limit);
+        long total = entryMapper.countPendingEntries(DEFAULT_USER_ID);
+
+        List<PendingEntryResponse> items = entries.stream()
+                .map(this::toPendingResponse)
+                .toList();
+
+        return PageResponse.<PendingEntryResponse>builder()
+                .items(items)
+                .total(total)
+                .hasMore(offset + limit < total)
+                .build();
+    }
+
+    @Override
+    public void skipEntry(String entryId) {
+        int rows = entryMapper.skipEntry(entryId);
+        if (rows == 0) {
+            throw new RuntimeException("Entry not found: " + entryId);
+        }
+    }
+
+    @Override
+    public EntryResponse getEntryById(String entryId) {
+        Entry entry = entryMapper.selectById(entryId);
+        if (entry == null) {
+            throw new RuntimeException("Entry not found: " + entryId);
+        }
+        return toResponse(entry);
+    }
+
     private Topic resolveTopic(String topicName) {
         if (!StringUtils.hasText(topicName)) {
             return null;
@@ -66,6 +121,34 @@ public class EntryServiceImpl implements EntryService {
         topic.setDeleted(0);
         topicMapper.insertTopic(topic);
         return topic;
+    }
+
+    private String deriveSuggestedAction(Entry entry) {
+        if (entry.getInsightText() == null || entry.getInsightText().isBlank()) {
+            return "ADD_INSIGHT";
+        }
+        if (entry.getTopicId() == null) {
+            return "ADD_TOPIC";
+        }
+        return null;
+    }
+
+    private String contentPreview(String rawContent) {
+        if (rawContent == null) return "";
+        return rawContent.length() > 200 ? rawContent.substring(0, 200) + "..." : rawContent;
+    }
+
+    private PendingEntryResponse toPendingResponse(Entry entry) {
+        return PendingEntryResponse.builder()
+                .entryId(entry.getId())
+                .contentPreview(contentPreview(entry.getRawContent()))
+                .sourceType(entry.getSourceType())
+                .capturedAt(entry.getCapturedAt())
+                .currentSuggestedAction(deriveSuggestedAction(entry))
+                .insightText(entry.getInsightText())
+                .topicId(entry.getTopicId())
+                .topicName(entry.getTopicName())
+                .build();
     }
 
     private EntryResponse toResponse(Entry entry) {

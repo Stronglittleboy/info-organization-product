@@ -29,4 +29,7 @@ public class Topic {
 
     @TableField("deleted")
     private Integer deleted;
+
+    @TableField(exist = false)
+    private Integer entryCount;
 }

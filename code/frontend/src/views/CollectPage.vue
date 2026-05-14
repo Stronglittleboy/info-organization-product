@@ -1,6 +1,7 @@
 <template>
   <div class="collect-page">
-    <el-card class="collect-card">
+    <!-- 主输入区 -->
+    <el-card v-if="pageState !== 'saved'" class="collect-card">
       <template #header>
         <div class="card-header">收集</div>
       </template>
@@ -12,6 +13,7 @@
             type="textarea"
             :rows="8"
             placeholder="输入你想收集的内容"
+            autofocus
           />
         </el-form-item>
 
@@ -19,20 +21,115 @@
           <el-input v-model="form.sourceTitle" placeholder="例如：微信公众号 / 网页标题 / 手工录入" />
         </el-form-item>
 
-        <el-form-item label="专题名称">
-          <el-input v-model="form.topicName" placeholder="可选：输入专题名自动归类" />
+        <el-form-item label="专题">
+          <el-select
+            v-model="form.topicName"
+            filterable
+            allow-create
+            clearable
+            default-first-option
+            placeholder="可选：选择或输入专题名"
+            :loading="topicLoading"
+            @focus="loadTopicOptions"
+          >
+            <el-option
+              v-for="t in topicOptions"
+              :key="t.topicId"
+              :label="t.name"
+              :value="t.name"
+            />
+          </el-select>
         </el-form-item>
 
         <div class="action-row">
-          <el-button type="primary" :loading="submitting" @click="handleSubmit">保存收集</el-button>
-          <span v-if="savedEntryId" class="success-text">已保存，Entry ID：{{ savedEntryId }}</span>
+          <el-button type="primary" :loading="submitting" @click="handleSubmit">
+            保存收集
+          </el-button>
         </div>
       </el-form>
     </el-card>
 
+    <!-- 保存后反馈区 -->
+    <el-card v-if="pageState === 'saved'" class="feedback-card">
+      <div class="feedback-header">
+        <el-icon :size="24" color="#67c23a"><CircleCheckFilled /></el-icon>
+        <span>已保存</span>
+      </div>
+
+      <div class="feedback-preview">{{ savedEntry?.rawContent }}</div>
+
+      <div class="feedback-actions">
+        <el-button type="primary" size="large" @click="handleContinueCollect">
+          继续记录
+        </el-button>
+        <el-button size="large" @click="showInsightInput = true" :disabled="showInsightInput">
+          补一句思考
+        </el-button>
+      </div>
+
+      <!-- 补一句思考 -->
+      <div v-if="showInsightInput" class="insight-section">
+        <el-input
+          v-model="insightText"
+          type="textarea"
+          :rows="3"
+          placeholder="写下你的一句话思考..."
+          autofocus
+        />
+        <div class="insight-actions">
+          <el-button type="primary" :loading="insightSaving" @click="handleSaveInsight">
+            保存思考
+          </el-button>
+          <el-button @click="showInsightInput = false; insightText = ''">取消</el-button>
+        </div>
+      </div>
+
+      <!-- 更多处理（弱入口） -->
+      <div class="more-actions">
+        <el-button text type="info" @click="showTopicSelect = !showTopicSelect">
+          {{ showTopicSelect ? '收起' : '更多处理' }}
+        </el-button>
+      </div>
+
+      <!-- 加入专题 -->
+      <div v-if="showTopicSelect" class="topic-section">
+        <el-select
+          v-model="selectedTopicId"
+          filterable
+          clearable
+          placeholder="选择专题"
+          :loading="topicLoading"
+          @focus="loadTopicOptions"
+          style="width: 100%"
+        >
+          <el-option
+            v-for="t in topicOptions"
+            :key="t.topicId"
+            :label="t.name"
+            :value="t.topicId"
+          />
+        </el-select>
+        <el-button
+          type="primary"
+          :disabled="!selectedTopicId"
+          :loading="topicSaving"
+          @click="handleSetTopic"
+          style="margin-top: 8px"
+        >
+          加入专题
+        </el-button>
+      </div>
+    </el-card>
+
+    <!-- 最近收集 -->
     <el-card class="recent-card">
       <template #header>
-        <div class="card-header">最近收集</div>
+        <div class="card-header-row">
+          <span class="card-header">最近收集</span>
+          <router-link v-if="pendingCount > 0" to="/pending" class="pending-hint">
+            还有 {{ pendingCount }} 条可去待处理继续处理 →
+          </router-link>
+        </div>
       </template>
 
       <el-empty v-if="!recentEntries.length" description="暂无收集记录" />
@@ -41,10 +138,13 @@
         <div v-for="entry in recentEntries" :key="entry.entryId" class="recent-item">
           <div class="recent-title">{{ entry.sourceTitle || '未命名来源' }}</div>
           <div class="recent-content">{{ entry.rawContent }}</div>
+          <div v-if="entry.insightText" class="recent-insight">
+            💡 {{ entry.insightText }}
+          </div>
           <div class="recent-meta">
-            <span>{{ entry.contentType || 'text' }}</span>
-            <span>{{ entry.topicName || '未归类' }}</span>
-            <span>{{ formatTime(entry.capturedAt) }}</span>
+            <el-tag v-if="entry.topicName" size="small" type="info">{{ entry.topicName }}</el-tag>
+            <span v-else class="meta-text">未归类</span>
+            <span class="meta-text">{{ formatTime(entry.capturedAt) }}</span>
           </div>
         </div>
       </div>
@@ -53,27 +153,70 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { createEntry, getRecentEntries } from '@/api/entry'
-import type { EntryResponse } from '@/types/entry'
+import { CircleCheckFilled } from '@element-plus/icons-vue'
+import {
+  createEntry,
+  getRecentEntries,
+  updateInsight,
+  updateEntryTopic,
+  getTopicList,
+  getPendingEntries
+} from '@/api/entry'
+import type { EntryResponse, TopicResponse } from '@/types/entry'
 
+type PageState = 'input' | 'saved'
+
+const pageState = ref<PageState>('input')
 const submitting = ref(false)
-const savedEntryId = ref('')
+const savedEntry = ref<EntryResponse | null>(null)
 const recentEntries = ref<EntryResponse[]>([])
+const pendingCount = ref(0)
 
-const form = reactive({
+const form = ref({
   rawContent: '',
   sourceTitle: '',
   topicName: ''
 })
 
+const showInsightInput = ref(false)
+const insightText = ref('')
+const insightSaving = ref(false)
+
+const showTopicSelect = ref(false)
+const selectedTopicId = ref('')
+const topicSaving = ref(false)
+
+const topicOptions = ref<TopicResponse[]>([])
+const topicLoading = ref(false)
+
+async function loadTopicOptions() {
+  if (topicOptions.value.length > 0) return
+  topicLoading.value = true
+  try {
+    const res = await getTopicList(0, 50)
+    topicOptions.value = res.items
+  } finally {
+    topicLoading.value = false
+  }
+}
+
 async function loadRecentEntries() {
   recentEntries.value = await getRecentEntries()
 }
 
+async function loadPendingCount() {
+  try {
+    const res = await getPendingEntries(0, 1)
+    pendingCount.value = res.total
+  } catch {
+    pendingCount.value = 0
+  }
+}
+
 async function handleSubmit() {
-  if (!form.rawContent.trim()) {
+  if (!form.value.rawContent.trim()) {
     ElMessage.warning('请先输入收集内容')
     return
   }
@@ -81,21 +224,56 @@ async function handleSubmit() {
   submitting.value = true
   try {
     const result = await createEntry({
-      rawContent: form.rawContent,
+      rawContent: form.value.rawContent,
       contentType: 'text',
       sourceType: 'manual',
-      sourceTitle: form.sourceTitle || '手工录入',
-      topicName: form.topicName || undefined
+      sourceTitle: form.value.sourceTitle || '手工录入',
+      topicName: form.value.topicName || undefined
     })
-
-    savedEntryId.value = result.entryId
+    savedEntry.value = result
+    pageState.value = 'saved'
+    showInsightInput.value = false
+    showTopicSelect.value = false
+    insightText.value = ''
+    selectedTopicId.value = ''
     ElMessage.success('保存成功')
-    form.rawContent = ''
-    form.sourceTitle = ''
-    form.topicName = ''
-    await loadRecentEntries()
+    await Promise.all([loadRecentEntries(), loadPendingCount()])
   } finally {
     submitting.value = false
+  }
+}
+
+function handleContinueCollect() {
+  form.value = { rawContent: '', sourceTitle: '', topicName: '' }
+  savedEntry.value = null
+  pageState.value = 'input'
+}
+
+async function handleSaveInsight() {
+  if (!insightText.value.trim() || !savedEntry.value) return
+  insightSaving.value = true
+  try {
+    await updateInsight(savedEntry.value.entryId, insightText.value.trim())
+    ElMessage.success('思考已保存')
+    showInsightInput.value = false
+    insightText.value = ''
+    await Promise.all([loadRecentEntries(), loadPendingCount()])
+  } finally {
+    insightSaving.value = false
+  }
+}
+
+async function handleSetTopic() {
+  if (!selectedTopicId.value || !savedEntry.value) return
+  topicSaving.value = true
+  try {
+    await updateEntryTopic(savedEntry.value.entryId, selectedTopicId.value)
+    ElMessage.success('已加入专题')
+    showTopicSelect.value = false
+    selectedTopicId.value = ''
+    await Promise.all([loadRecentEntries(), loadPendingCount()])
+  } finally {
+    topicSaving.value = false
   }
 }
 
@@ -105,26 +283,139 @@ function formatTime(value?: string) {
 }
 
 onMounted(async () => {
-  await loadRecentEntries()
+  await Promise.all([loadRecentEntries(), loadPendingCount()])
 })
 </script>
 
 <style scoped>
 .collect-page {
-  max-width: 960px;
-  margin: 32px auto;
-  padding: 0 16px 32px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
-.collect-card,.recent-card { border-radius: 16px; }
-.card-header { font-size: 18px; font-weight: 600; color: #303133; }
-.action-row { display: flex; align-items: center; gap: 12px; }
-.success-text { color: #67c23a; font-size: 14px; }
-.recent-list { display: flex; flex-direction: column; gap: 12px; }
-.recent-item { padding: 14px 16px; border: 1px solid #ebeef5; border-radius: 12px; background: #fafafa; }
-.recent-title { font-size: 14px; font-weight: 600; color: #303133; margin-bottom: 8px; }
-.recent-content { font-size: 14px; color: #606266; line-height: 1.7; white-space: pre-wrap; word-break: break-word; margin-bottom: 8px; }
-.recent-meta { display: flex; gap: 12px; font-size: 12px; color: #909399; }
+.collect-card, .recent-card, .feedback-card {
+  border-radius: 16px;
+}
+.card-header {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+}
+.card-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.pending-hint {
+  font-size: 13px;
+  color: #e6a23c;
+  text-decoration: none;
+}
+.pending-hint:hover {
+  text-decoration: underline;
+}
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.feedback-card {
+  text-align: center;
+}
+.feedback-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #67c23a;
+  margin-bottom: 16px;
+}
+.feedback-preview {
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  text-align: left;
+  max-height: 120px;
+  overflow: hidden;
+}
+.feedback-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.insight-section {
+  margin-top: 12px;
+  text-align: left;
+}
+.insight-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+.more-actions {
+  margin-top: 8px;
+}
+.topic-section {
+  margin-top: 12px;
+  text-align: left;
+}
+.recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.recent-item {
+  padding: 14px 16px;
+  border: 1px solid #ebeef5;
+  border-radius: 12px;
+  background: #fafafa;
+}
+.recent-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 6px;
+}
+.recent-content {
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.recent-insight {
+  font-size: 13px;
+  color: #409eff;
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  background: #ecf5ff;
+  border-radius: 6px;
+}
+.recent-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #909399;
+}
+.meta-text {
+  color: #909399;
+}
 </style>
