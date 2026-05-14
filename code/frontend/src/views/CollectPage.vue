@@ -1,152 +1,203 @@
 <template>
   <div class="collect-page">
-    <!-- 主输入区 -->
+    <!-- 主输入区：方案 B 智能识别 -->
     <el-card v-if="pageState !== 'saved'" class="collect-card">
       <template #header>
-        <div class="card-header">收集</div>
+        <div class="card-header">收集素材</div>
       </template>
 
-      <el-form @submit.prevent>
-        <el-form-item label="类型">
-          <el-radio-group v-model="materialMode">
-            <el-radio-button value="text">文本</el-radio-button>
-            <el-radio-button value="url">链接</el-radio-button>
-            <el-radio-button value="image">图片</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
+      <!-- 初始：统一输入区 -->
+      <div v-if="!contentDetected" class="smart-idle">
+        <div class="smart-drop-wrap" @dragover.prevent @drop.prevent="handleSmartDrop">
+          <textarea
+            v-model="smartDraft"
+            class="smart-input"
+            rows="10"
+            placeholder="粘贴文本、图片或链接..."
+            @paste="handleSmartPaste"
+            @keydown="handleSmartKeydown"
+          />
+        </div>
+        <div class="upload-hint">
+          或点击上传图片
+          <label class="upload-trigger" title="选择图片">
+            📷
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              class="sr-only"
+              @change="handleHiddenFileChange"
+            />
+          </label>
+        </div>
+        <div class="idle-actions">
+          <el-button type="primary" :disabled="!smartDraft.trim()" @click="enterTextModeFromDraft">
+            填写详情（文本）
+          </el-button>
+          <el-button :disabled="!isLikelyUrl(smartDraft)" @click="enterUrlModeFromDraft">
+            识别为链接
+          </el-button>
+        </div>
+        <p class="hint-line">
+          支持拖拽或粘贴图片；粘贴以 http(s):// 开头的链接将自动识别并拉取网页信息；纯文本可先输入再点「填写详情」或使用 Ctrl/⌘ + Enter。
+        </p>
+      </div>
+
+      <!-- 识别后：分类型表单 -->
+      <div v-else class="editing-area">
+        <div class="editing-toolbar">
+          <span class="type-chip">{{ typeChipLabel }}</span>
+          <el-button text type="primary" @click="resetDetection">← 重新输入</el-button>
+        </div>
 
         <!-- 文本 -->
-        <template v-if="materialMode === 'text'">
-          <el-form-item label="内容">
-            <el-input
-              v-model="form.rawContent"
-              type="textarea"
-              :rows="8"
-              placeholder="输入你想收集的内容"
-              autofocus
-            />
-          </el-form-item>
-          <el-form-item label="思考（可选）">
-            <el-input
-              v-model="form.textInsight"
-              type="textarea"
-              :rows="2"
-              placeholder="有思考时可填写；填写后将使用「文本收集」接口并支持专题 ID"
-            />
-          </el-form-item>
-          <el-form-item label="来源类型">
-            <el-select v-model="form.sourceType" clearable placeholder="选择来源类型" style="width: 100%">
-              <el-option label="书籍" value="BOOK" />
-              <el-option label="网页" value="WEB" />
-              <el-option label="对话" value="CONVERSATION" />
-              <el-option label="手工录入" value="MANUAL" />
-              <el-option label="其他" value="OTHER" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="来源标题">
-            <el-input v-model="form.sourceTitle" placeholder="例如：微信公众号 / 网页标题 / 书名" />
-          </el-form-item>
-          <el-form-item v-if="form.sourceType === 'WEB'" label="来源链接">
-            <el-input v-model="form.sourceLink" placeholder="https://..." />
+        <template v-if="contentType === 'text'">
+          <div class="section-label">📝 文本</div>
+          <el-input
+            v-model="form.rawContent"
+            type="textarea"
+            :rows="8"
+            placeholder="正文内容"
+          />
+          <el-form-item label="你的思考（可选）" class="mt-form">
+            <el-input v-model="form.textInsight" type="textarea" :rows="2" placeholder="一句话思考" />
           </el-form-item>
         </template>
 
         <!-- 链接 -->
-        <template v-else-if="materialMode === 'url'">
-          <el-form-item label="网页地址">
-            <el-input v-model="urlForm.url" placeholder="https://..." clearable />
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" plain :loading="urlMetaLoading" @click="fetchUrlMeta">
-              拉取网页信息
+        <template v-else-if="contentType === 'url'">
+          <div class="section-label">🔗 链接</div>
+          <el-input v-model="urlForm.url" placeholder="https://..." clearable />
+          <div class="url-actions">
+            <el-button type="primary" plain :loading="urlMetaLoading" @click="fetchUrlMeta(false)">
+              重新拉取网页信息
             </el-button>
-          </el-form-item>
-          <div v-if="urlPreview" class="url-preview">
+          </div>
+          <div v-if="urlMetaLoading" class="url-loading">
+            <el-icon class="is-loading"><Loading /></el-icon>
+            <span>正在获取网页信息...</span>
+          </div>
+          <div v-else-if="urlPreview" class="url-preview">
             <div class="url-preview-title">{{ urlPreview.title || '（无标题）' }}</div>
             <p class="url-preview-desc">{{ urlPreview.description || '（无描述）' }}</p>
             <p v-if="urlPreview.extractedText" class="url-preview-text">{{ urlPreview.extractedText }}</p>
           </div>
-          <el-form-item label="你的思考" required>
+          <el-alert
+            v-else-if="urlExtractFailed"
+            type="warning"
+            :closable="false"
+            title="无法获取网页信息"
+            description="仍可填写思考后保存，服务器会再次尝试提取元数据。"
+            show-icon
+            class="mt-alert"
+          />
+          <el-form-item label="你的思考（必填）" required class="mt-form">
             <el-input
               v-model="urlForm.insight"
               type="textarea"
               :rows="3"
-              placeholder="链接收集需要填写思考"
+              placeholder="这篇文章/页面对你意味着什么？"
             />
-          </el-form-item>
-          <el-form-item label="来源类型">
-            <el-select v-model="urlForm.sourceType" clearable placeholder="可选" style="width: 100%">
-              <el-option label="网页" value="网页" />
-              <el-option label="文章" value="文章" />
-            </el-select>
           </el-form-item>
         </template>
 
         <!-- 图片 -->
         <template v-else>
-          <el-form-item label="上传图片">
-            <el-upload
-              drag
-              :auto-upload="false"
-              :limit="1"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              :on-change="onImageFileChange"
-              :on-remove="onImageFileRemove"
-            >
-              <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-              <div class="el-upload__text">拖拽到此处，或 <em>点击选择</em></div>
-            </el-upload>
-          </el-form-item>
-          <el-form-item v-if="imageOcrPreview" label="识别文字（预览）">
-            <el-input v-model="imageOcrPreview" type="textarea" :rows="4" readonly />
-          </el-form-item>
-          <el-form-item>
-            <el-button :disabled="!imageFile" :loading="ocrLoading" @click="runOcrPreview">
-              重新识别文字
-            </el-button>
-          </el-form-item>
-          <el-form-item label="你的思考" required>
+          <div class="section-label">📷 图片</div>
+          <div v-if="imageObjectUrl" class="img-preview-wrap">
+            <img :src="imageObjectUrl" alt="预览" class="img-preview" />
+            <el-button text type="primary" @click="triggerFilePick">更换图片</el-button>
+          </div>
+          <div v-if="ocrLoading" class="ocr-loading">
+            <el-icon class="is-loading"><Loading /></el-icon>
+            <span>正在识别文字...</span>
+          </div>
+          <template v-else>
+            <el-alert
+              v-if="ocrFailed"
+              type="warning"
+              :closable="false"
+              title="文字识别失败"
+              description="请直接在下方思考中描述图片要点，仍可保存。"
+              show-icon
+              class="mt-alert"
+            />
+            <el-form-item v-if="imageOcrPreview && !ocrFailed" label="识别到的文字" class="mt-form">
+              <el-input v-model="imageOcrPreview" type="textarea" :rows="4" readonly />
+            </el-form-item>
+          </template>
+          <el-form-item label="这张图说明了什么？（必填）" required class="mt-form">
             <el-input
               v-model="imageForm.insight"
               type="textarea"
               :rows="3"
-              placeholder="图片收集需要填写思考"
+              placeholder="例如：竞品登录流程、会议白板要点…"
             />
           </el-form-item>
-          <el-form-item label="来源类型">
-            <el-select v-model="imageForm.sourceType" clearable placeholder="可选" style="width: 100%">
-              <el-option label="截图" value="截图" />
-              <el-option label="照片" value="照片" />
-            </el-select>
-          </el-form-item>
+          <el-button :disabled="!imageFile" :loading="ocrLoading" @click="runOcrPreview">
+            重新识别文字
+          </el-button>
         </template>
 
-        <el-form-item label="专题">
-          <el-select
-            v-model="form.topicName"
-            filterable
-            allow-create
-            clearable
-            default-first-option
-            placeholder="可选：选择或输入专题名"
-            :loading="topicLoading"
-            @focus="loadTopicOptions"
-          >
-            <el-option
-              v-for="t in topicOptions"
-              :key="t.topicId"
-              :label="t.name"
-              :value="t.name"
-            />
-          </el-select>
-        </el-form-item>
+        <el-collapse v-model="moreOpen" class="more-collapse">
+          <el-collapse-item title="⚙️ 更多选项" name="more">
+            <el-form label-position="top">
+              <el-form-item v-if="contentType === 'text'" label="来源类型">
+                <el-select v-model="form.sourceType" clearable placeholder="可选" style="width: 100%">
+                  <el-option label="书籍" value="书籍" />
+                  <el-option label="网页" value="网页" />
+                  <el-option label="对话" value="对话" />
+                  <el-option label="手工录入" value="手工录入" />
+                  <el-option label="其他" value="其他" />
+                </el-select>
+              </el-form-item>
+              <el-form-item v-if="contentType === 'text'" label="来源标题">
+                <el-input v-model="form.sourceTitle" placeholder="书名 / 标题 / 会话名" />
+              </el-form-item>
+              <el-form-item v-if="contentType === 'text' && form.sourceType === '网页'" label="来源链接">
+                <el-input v-model="form.sourceLink" placeholder="https://..." />
+              </el-form-item>
+              <el-form-item v-if="contentType === 'url'" label="来源类型">
+                <el-select v-model="urlForm.sourceType" clearable placeholder="可选" style="width: 100%">
+                  <el-option label="网页" value="网页" />
+                  <el-option label="文章" value="文章" />
+                </el-select>
+              </el-form-item>
+              <el-form-item v-if="contentType === 'image'" label="来源类型">
+                <el-select v-model="imageForm.sourceType" clearable placeholder="可选" style="width: 100%">
+                  <el-option label="截图" value="截图" />
+                  <el-option label="照片" value="照片" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="专题">
+                <el-select
+                  v-model="form.topicName"
+                  filterable
+                  allow-create
+                  clearable
+                  default-first-option
+                  placeholder="可选：选择或输入专题名"
+                  :loading="topicLoading"
+                  style="width: 100%"
+                  @focus="loadTopicOptions"
+                >
+                  <el-option
+                    v-for="t in topicOptions"
+                    :key="t.topicId"
+                    :label="t.name"
+                    :value="t.name"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-form>
+          </el-collapse-item>
+        </el-collapse>
 
         <div class="action-row">
-          <el-button type="primary" :loading="submitting" @click="handleSubmit">
-            保存收集
-          </el-button>
+          <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
         </div>
-      </el-form>
+      </div>
     </el-card>
 
     <!-- 保存后反馈区 -->
@@ -167,7 +218,6 @@
         </el-button>
       </div>
 
-      <!-- 补一句思考 -->
       <div v-if="showInsightInput" class="insight-section">
         <el-input
           v-model="insightText"
@@ -184,14 +234,12 @@
         </div>
       </div>
 
-      <!-- 更多处理（弱入口） -->
       <div class="more-actions">
         <el-button text type="info" @click="showTopicSelect = !showTopicSelect">
           {{ showTopicSelect ? '收起' : '更多处理' }}
         </el-button>
       </div>
 
-      <!-- 加入专题 -->
       <div v-if="showTopicSelect" class="topic-section">
         <el-select
           v-model="selectedTopicId"
@@ -199,8 +247,8 @@
           clearable
           placeholder="选择专题"
           :loading="topicLoading"
-          @focus="loadTopicOptions"
           style="width: 100%"
+          @focus="loadTopicOptions"
         >
           <el-option
             v-for="t in topicOptions"
@@ -247,7 +295,6 @@
             <span class="meta-text">{{ formatTime(entry.capturedAt) }}</span>
           </div>
 
-          <!-- 行内补思考 -->
           <div v-if="recentInsightEditing === entry.entryId" class="recent-inline-edit">
             <el-input
               v-model="recentInsightText"
@@ -262,7 +309,6 @@
             </div>
           </div>
 
-          <!-- 行内加专题 -->
           <div v-if="recentTopicEditing === entry.entryId" class="recent-inline-edit">
             <el-select
               v-model="recentTopicId"
@@ -272,8 +318,8 @@
               default-first-option
               placeholder="选择或输入专题名"
               :loading="topicLoading"
-              @focus="loadTopicOptions"
               style="width: 100%"
+              @focus="loadTopicOptions"
             >
               <el-option v-for="t in topicOptions" :key="t.topicId" :label="t.name" :value="t.topicId" />
             </el-select>
@@ -283,7 +329,6 @@
             </div>
           </div>
 
-          <!-- 快捷操作按钮 -->
           <div v-if="recentInsightEditing !== entry.entryId && recentTopicEditing !== entry.entryId" class="recent-quick-actions">
             <el-button
               v-if="!entry.insightText"
@@ -305,7 +350,7 @@
       </div>
     </el-card>
 
-    <!-- 值得回看（回顾机制） -->
+    <!-- 值得回看 -->
     <el-card v-if="reviewEntries.length > 0" class="review-card">
       <template #header>
         <span class="card-header">值得回看</span>
@@ -332,8 +377,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { CircleCheckFilled, UploadFilled } from '@element-plus/icons-vue'
-import type { UploadFile } from 'element-plus'
+import { CircleCheckFilled, Loading } from '@element-plus/icons-vue'
 import {
   collectText,
   collectUrl,
@@ -352,10 +396,17 @@ import {
 import type { EntryResponse, TopicResponse, UrlMetadataResponse } from '@/types/entry'
 
 type PageState = 'input' | 'saved'
-type MaterialMode = 'text' | 'url' | 'image'
+type ContentKind = 'text' | 'url' | 'image'
+
+const URL_LINE = /^https?:\/\/.+/i
 
 const pageState = ref<PageState>('input')
-const materialMode = ref<MaterialMode>('text')
+const contentDetected = ref(false)
+const contentType = ref<ContentKind | null>(null)
+const smartDraft = ref('')
+const moreOpen = ref<string[]>([])
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
 const submitting = ref(false)
 const savedEntry = ref<EntryResponse | null>(null)
 const recentEntries = ref<EntryResponse[]>([])
@@ -374,18 +425,21 @@ const form = ref({
 const urlForm = ref({
   url: '',
   insight: '',
-  sourceType: ''
+  sourceType: '网页'
 })
 const urlPreview = ref<UrlMetadataResponse | null>(null)
 const urlMetaLoading = ref(false)
+const urlExtractFailed = ref(false)
 
 const imageForm = ref({
   insight: '',
   sourceType: ''
 })
 const imageFile = ref<File | undefined>(undefined)
+const imageObjectUrl = ref('')
 const imageOcrPreview = ref('')
 const ocrLoading = ref(false)
+const ocrFailed = ref(false)
 
 const showInsightInput = ref(false)
 const insightText = ref('')
@@ -403,6 +457,13 @@ const recentInsightText = ref('')
 const recentTopicEditing = ref('')
 const recentTopicId = ref('')
 const recentSaving = ref(false)
+
+const typeChipLabel = computed(() => {
+  if (contentType.value === 'text') return '📝 文本'
+  if (contentType.value === 'url') return '🔗 链接'
+  if (contentType.value === 'image') return '📷 图片'
+  return ''
+})
 
 const savedPreview = computed(() => {
   const e = savedEntry.value
@@ -431,6 +492,163 @@ function recentBody(e: EntryResponse) {
 
 function reviewBody(e: EntryResponse) {
   return recentBody(e)
+}
+
+function isLikelyUrl(s: string) {
+  const t = s.trim()
+  return t.length > 0 && URL_LINE.test(t) && !t.includes('\n')
+}
+
+function revokeImagePreview() {
+  if (imageObjectUrl.value) {
+    URL.revokeObjectURL(imageObjectUrl.value)
+    imageObjectUrl.value = ''
+  }
+}
+
+function resetDetection() {
+  contentDetected.value = false
+  contentType.value = null
+  smartDraft.value = ''
+  revokeImagePreview()
+  imageFile.value = undefined
+  imageOcrPreview.value = ''
+  ocrFailed.value = false
+  ocrLoading.value = false
+  urlPreview.value = null
+  urlExtractFailed.value = false
+  urlMetaLoading.value = false
+  form.value = {
+    rawContent: '',
+    textInsight: '',
+    sourceType: '',
+    sourceTitle: '',
+    sourceLink: '',
+    topicName: ''
+  }
+  urlForm.value = { url: '', insight: '', sourceType: '网页' }
+  imageForm.value = { insight: '', sourceType: '' }
+  moreOpen.value = []
+}
+
+function enterTextMode(text: string) {
+  contentDetected.value = true
+  contentType.value = 'text'
+  form.value.rawContent = text
+  form.value.textInsight = ''
+  smartDraft.value = ''
+}
+
+function enterTextModeFromDraft() {
+  const t = smartDraft.value.trim()
+  if (!t) {
+    ElMessage.warning('请先输入内容')
+    return
+  }
+  enterTextMode(t)
+}
+
+async function enterUrlMode(url: string, silent = false) {
+  contentDetected.value = true
+  contentType.value = 'url'
+  urlForm.value.url = url
+  urlForm.value.insight = ''
+  urlForm.value.sourceType = urlForm.value.sourceType || '网页'
+  urlPreview.value = null
+  urlExtractFailed.value = false
+  smartDraft.value = ''
+  await fetchUrlMeta(silent)
+}
+
+async function enterUrlModeFromDraft() {
+  const u = smartDraft.value.trim()
+  if (!isLikelyUrl(u)) {
+    ElMessage.warning('当前内容不是单行链接')
+    return
+  }
+  await enterUrlMode(u, false)
+}
+
+async function enterImageMode(file: File) {
+  if (!file.type.startsWith('image/')) {
+    ElMessage.warning('请使用图片文件')
+    return
+  }
+  const ok = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)
+  if (!ok) {
+    ElMessage.warning('仅支持 JPEG、PNG、WebP、GIF')
+    return
+  }
+  revokeImagePreview()
+  imageFile.value = file
+  imageObjectUrl.value = URL.createObjectURL(file)
+  contentDetected.value = true
+  contentType.value = 'image'
+  imageForm.value.insight = ''
+  imageOcrPreview.value = ''
+  ocrFailed.value = false
+  smartDraft.value = ''
+  await runOcrPreview()
+}
+
+async function handleSmartPaste(e: ClipboardEvent) {
+  const items = e.clipboardData?.items
+  if (items) {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        e.preventDefault()
+        const f = item.getAsFile()
+        if (f) await enterImageMode(f)
+        return
+      }
+    }
+  }
+  const text = e.clipboardData?.getData('text') ?? ''
+  const t = text.trim()
+  if (URL_LINE.test(t) && !t.includes('\n')) {
+    e.preventDefault()
+    await enterUrlMode(t, true)
+    return
+  }
+  if (text) {
+    enterTextMode(text)
+  }
+}
+
+function handleSmartDrop(e: DragEvent) {
+  const files = e.dataTransfer?.files
+  if (files && files.length > 0 && files[0].type.startsWith('image/')) {
+    void enterImageMode(files[0])
+  }
+}
+
+function handleHiddenFileChange(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const f = input.files?.[0]
+  input.value = ''
+  if (f) void enterImageMode(f)
+}
+
+function triggerFilePick() {
+  fileInputRef.value?.click()
+}
+
+function handleSmartKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    if (contentDetected.value) {
+      resetDetection()
+    }
+    return
+  }
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault()
+    if (contentDetected.value) {
+      void handleSubmit()
+    } else if (smartDraft.value.trim()) {
+      enterTextModeFromDraft()
+    }
+  }
 }
 
 async function loadTopicOptions() {
@@ -475,45 +693,36 @@ async function loadReviewEntries() {
   }
 }
 
-async function fetchUrlMeta() {
+async function fetchUrlMeta(silent: boolean) {
   const u = urlForm.value.url.trim()
   if (!u) {
-    ElMessage.warning('请先填写网页地址')
+    if (!silent) ElMessage.warning('请先填写网页地址')
     return
   }
   urlMetaLoading.value = true
+  urlExtractFailed.value = false
   try {
     urlPreview.value = await extractUrlMetadata(u)
-    ElMessage.success('已获取网页信息')
+    if (!silent) ElMessage.success('已获取网页信息')
   } catch {
     urlPreview.value = null
+    urlExtractFailed.value = true
+    if (!silent) ElMessage.error('拉取网页信息失败')
   } finally {
     urlMetaLoading.value = false
   }
 }
 
-function onImageFileChange(file: UploadFile) {
-  imageFile.value = file.raw as File | undefined
-  imageOcrPreview.value = ''
-  if (imageFile.value) {
-    void runOcrPreview()
-  }
-}
-
-function onImageFileRemove() {
-  imageFile.value = undefined
-  imageOcrPreview.value = ''
-}
-
 async function runOcrPreview() {
-  if (!imageFile.value) {
-    ElMessage.warning('请先选择图片')
-    return
-  }
+  if (!imageFile.value) return
   ocrLoading.value = true
+  ocrFailed.value = false
   try {
     const r = await ocrImage(imageFile.value)
     imageOcrPreview.value = r.text || ''
+  } catch {
+    imageOcrPreview.value = ''
+    ocrFailed.value = true
   } finally {
     ocrLoading.value = false
   }
@@ -522,46 +731,46 @@ async function runOcrPreview() {
 async function handleSubmit() {
   submitting.value = true
   try {
-    if (materialMode.value === 'text') {
+    const topicId = await resolveTopicIdFromName(form.value.topicName)
+
+    if (contentType.value === 'text') {
       if (!form.value.rawContent.trim()) {
-        ElMessage.warning('请先输入收集内容')
+        ElMessage.warning('请先输入正文')
         return
       }
       const topicId = await resolveTopicIdFromName(form.value.topicName)
-      if (form.value.textInsight.trim()) {
-        const result = await collectText({
-          rawContent: form.value.rawContent.trim(),
-          insight: form.value.textInsight.trim(),
-          sourceType: form.value.sourceType || undefined,
-          topicId
-        })
-        savedEntry.value = result
-      } else {
+      const hasStructuredSource =
+        !!(form.value.sourceTitle?.trim() || form.value.sourceLink?.trim())
+
+      if (hasStructuredSource) {
         const result = await createEntry({
           rawContent: form.value.rawContent.trim(),
           contentType: 'text',
           sourceType: form.value.sourceType || 'MANUAL',
-          sourceTitle: form.value.sourceTitle || '手工录入',
+          sourceTitle: form.value.sourceTitle?.trim() || '手工录入',
           sourceLink: form.value.sourceLink || undefined,
           topicName: form.value.topicName || undefined
         })
         savedEntry.value = result
+      } else {
+        const result = await collectText({
+          rawContent: form.value.rawContent.trim(),
+          insight: form.value.textInsight.trim() || undefined,
+          sourceType: form.value.sourceType || undefined,
+          topicId
+        })
+        savedEntry.value = result
       }
-    } else if (materialMode.value === 'url') {
+    } else if (contentType.value === 'url') {
       const u = urlForm.value.url.trim()
       if (!u) {
-        ElMessage.warning('请填写网页地址')
-        return
-      }
-      if (!urlPreview.value) {
-        ElMessage.warning('请先点击「拉取网页信息」')
+        ElMessage.warning('请填写链接地址')
         return
       }
       if (!urlForm.value.insight.trim()) {
         ElMessage.warning('请填写你的思考')
         return
       }
-      const topicId = await resolveTopicIdFromName(form.value.topicName)
       const result = await collectUrl({
         url: u,
         insight: urlForm.value.insight.trim(),
@@ -569,16 +778,15 @@ async function handleSubmit() {
         topicId
       })
       savedEntry.value = result
-    } else {
+    } else if (contentType.value === 'image') {
       if (!imageFile.value) {
-        ElMessage.warning('请选择一张图片')
+        ElMessage.warning('请先选择图片')
         return
       }
       if (!imageForm.value.insight.trim()) {
-        ElMessage.warning('请填写你的思考')
+        ElMessage.warning('请填写这张图说明了什么')
         return
       }
-      const topicId = await resolveTopicIdFromName(form.value.topicName)
       const result = await uploadImageEntry({
         file: imageFile.value,
         insight: imageForm.value.insight.trim(),
@@ -586,6 +794,8 @@ async function handleSubmit() {
         topicId
       })
       savedEntry.value = result
+    } else {
+      return
     }
 
     pageState.value = 'saved'
@@ -601,20 +811,7 @@ async function handleSubmit() {
 }
 
 function handleContinueCollect() {
-  form.value = {
-    rawContent: '',
-    textInsight: '',
-    sourceType: '',
-    sourceTitle: '',
-    sourceLink: '',
-    topicName: ''
-  }
-  urlForm.value = { url: '', insight: '', sourceType: '' }
-  urlPreview.value = null
-  imageForm.value = { insight: '', sourceType: '' }
-  imageFile.value = undefined
-  imageOcrPreview.value = ''
-  materialMode.value = 'text'
+  resetDetection()
   savedEntry.value = null
   pageState.value = 'input'
 }
@@ -685,14 +882,16 @@ onMounted(async () => {
 
 <style scoped>
 .collect-page {
-  max-width: 720px;
+  max-width: 800px;
   margin: 0 auto;
   padding: 24px 16px 48px;
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
-.collect-card, .recent-card, .feedback-card {
+.collect-card,
+.recent-card,
+.feedback-card {
   border-radius: 16px;
 }
 .card-header {
@@ -713,14 +912,113 @@ onMounted(async () => {
 .pending-hint:hover {
   text-decoration: underline;
 }
-.action-row {
+
+/* 方案 B：智能输入 */
+.smart-idle {
+  padding: 4px 0 8px;
+}
+.smart-drop-wrap {
+  width: 100%;
+}
+.smart-input {
+  width: 100%;
+  min-height: 200px;
+  padding: 16px;
+  border: 2px dashed #dcdfe6;
+  border-radius: 12px;
+  font-size: 16px;
+  line-height: 1.6;
+  resize: vertical;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: border-color 0.2s, border-style 0.2s;
+}
+.smart-input:focus {
+  outline: none;
+  border-color: #409eff;
+  border-style: solid;
+}
+.upload-hint {
+  margin-top: 16px;
+  text-align: center;
+  color: #909399;
+  font-size: 14px;
+}
+.upload-trigger {
+  cursor: pointer;
+  font-size: 20px;
+  margin-left: 4px;
+  user-select: none;
+}
+.upload-trigger:hover {
+  transform: scale(1.15);
+  display: inline-block;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.idle-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+.hint-line {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.5;
+}
+
+.editing-area {
+  padding-top: 4px;
+}
+.editing-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.type-chip {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+.section-label {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: #303133;
+}
+.mt-form {
+  margin-top: 12px;
+}
+.mt-alert {
+  margin-top: 12px;
+}
+.url-actions {
+  margin-top: 10px;
+}
+.url-loading,
+.ocr-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  color: #606266;
+  font-size: 14px;
 }
 .url-preview {
   padding: 12px 14px;
-  margin-bottom: 12px;
+  margin-top: 12px;
   background: #f5f7fa;
   border-radius: 8px;
   border: 1px solid #ebeef5;
@@ -744,6 +1042,34 @@ onMounted(async () => {
   max-height: 160px;
   overflow: auto;
 }
+.img-preview-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.img-preview {
+  max-width: 100%;
+  max-height: 280px;
+  border-radius: 8px;
+  border: 1px solid #ebeef5;
+}
+.more-collapse {
+  margin-top: 16px;
+  border: none;
+}
+.more-collapse :deep(.el-collapse-item__header) {
+  font-size: 14px;
+  color: #606266;
+}
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+
 .feedback-card {
   text-align: center;
 }
@@ -768,8 +1094,8 @@ onMounted(async () => {
   border-radius: 8px;
   margin-bottom: 20px;
   text-align: left;
-  max-height: 120px;
-  overflow: hidden;
+  max-height: 200px;
+  overflow: auto;
 }
 .feedback-actions {
   display: flex;
