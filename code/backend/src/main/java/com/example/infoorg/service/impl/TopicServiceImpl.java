@@ -68,6 +68,26 @@ public class TopicServiceImpl implements TopicService {
         return toResponse(topic);
     }
 
+    @Override
+    public TopicResponse updateTopic(String topicId, String name, String description) {
+        Topic topic = topicMapper.selectById(topicId);
+        if (topic == null) {
+            throw new RuntimeException("Topic not found: " + topicId);
+        }
+        topicMapper.updateTopic(topicId, name.trim(), description);
+        topic.setName(name.trim());
+        topic.setDescription(description);
+        return toResponse(topic);
+    }
+
+    @Override
+    public void deleteTopic(String topicId) {
+        int rows = topicMapper.softDelete(topicId);
+        if (rows == 0) {
+            throw new RuntimeException("Topic not found: " + topicId);
+        }
+    }
+
     private TopicResponse toResponse(Topic topic) {
         return TopicResponse.builder()
                 .topicId(topic.getId())

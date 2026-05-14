@@ -13,4 +13,8 @@ public interface TopicService {
     TopicResponse createTopic(String name, String description);
 
     TopicResponse getTopicById(String topicId);
+
+    TopicResponse updateTopic(String topicId, String name, String description);
+
+    void deleteTopic(String topicId);
 }

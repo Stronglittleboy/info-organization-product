@@ -67,16 +67,29 @@ public class EntryController {
             @RequestParam String keyword,
             @RequestParam(required = false) String topicId,
             @RequestParam(required = false) Boolean hasInsight,
-            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") int limit) {
-        return entryService.searchEntries(keyword, topicId, hasInsight, offset, limit);
+        return entryService.searchEntries(keyword, topicId, hasInsight, startDate, endDate, cursor, limit);
     }
 
     @PostMapping("/entries/{entryId}/reuse")
-    public Map<String, Boolean> recordReuse(@PathVariable String entryId,
-                                            @RequestBody Map<String, String> body) {
+    public Map<String, Object> recordReuse(@PathVariable String entryId,
+                                           @RequestBody Map<String, String> body) {
         String reuseType = body.getOrDefault("reuseType", "copy");
-        entryService.recordReuse(entryId, reuseType);
+        int totalCount = entryService.recordReuse(entryId, reuseType);
+        return Map.of("success", true, "totalCount", totalCount);
+    }
+
+    @GetMapping("/entries/review")
+    public List<EntryResponse> getReviewEntries(@RequestParam(defaultValue = "5") int limit) {
+        return entryService.getReviewEntries(limit);
+    }
+
+    @DeleteMapping("/entries/{entryId}")
+    public Map<String, Boolean> deleteEntry(@PathVariable String entryId) {
+        entryService.deleteEntry(entryId);
         return Map.of("success", true);
     }
 }

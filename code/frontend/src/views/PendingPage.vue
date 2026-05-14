@@ -10,15 +10,17 @@
       最近有 {{ total }} 条内容还可以再变得更好用
     </div>
 
-    <!-- 加载状态 -->
-    <div v-if="loading" class="loading-state">
-      <el-icon class="is-loading" :size="32"><Loading /></el-icon>
-      <span>加载中...</span>
+    <!-- 加载骨架屏 -->
+    <div v-if="loading" class="skeleton-list">
+      <div v-for="i in 3" :key="i" class="pending-card">
+        <el-skeleton :rows="4" animated />
+      </div>
     </div>
 
     <!-- 空状态 -->
     <el-empty v-else-if="items.length === 0" description="当前没有待处理的内容">
-      <el-button type="primary" @click="$router.push('/collect')">去收集</el-button>
+      <p class="empty-hint">所有最近内容都已经有了思考和专题归类</p>
+      <el-button type="primary" @click="$router.push('/collect')">继续收集</el-button>
     </el-empty>
 
     <!-- 处理流 -->
@@ -71,6 +73,7 @@
               保存
             </el-button>
             <el-button size="small" @click="handleSkip(entry.entryId)">跳过</el-button>
+            <el-button size="small" text type="primary" @click="$router.push(`/entry/${entry.entryId}`)">详情</el-button>
           </div>
         </div>
 
@@ -105,6 +108,7 @@
               保存
             </el-button>
             <el-button size="small" @click="handleSkip(entry.entryId)">跳过</el-button>
+            <el-button size="small" text type="primary" @click="$router.push(`/entry/${entry.entryId}`)">详情</el-button>
           </div>
         </div>
       </div>
@@ -119,7 +123,6 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import {
   getPendingEntries,
@@ -278,13 +281,15 @@ onMounted(() => {
   font-size: 14px;
   margin-bottom: 20px;
 }
-.loading-state {
+.skeleton-list {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 48px 0;
+  gap: 16px;
+}
+.empty-hint {
+  font-size: 13px;
   color: #909399;
+  margin: 0 0 12px;
 }
 .pending-list {
   display: flex;

@@ -3,11 +3,16 @@
     <h2 class="page-title">专题</h2>
     <p class="page-desc">围绕持续问题积累的内容</p>
 
-    <div v-if="loading" class="loading-state">
-      <el-icon class="is-loading" :size="28"><Loading /></el-icon>
+    <div v-if="loading" class="skeleton-grid">
+      <div v-for="i in 4" :key="i" class="topic-card skeleton-card">
+        <el-skeleton :rows="1" animated />
+      </div>
     </div>
 
-    <el-empty v-else-if="topics.length === 0" description="还没有专题，在收集时创建你的第一个专题" />
+    <el-empty v-else-if="topics.length === 0" description="还没有专题">
+      <p class="empty-hint">在收集时选择或输入专题名，即可创建你的第一个专题</p>
+      <el-button type="primary" @click="$router.push('/collect')">去收集</el-button>
+    </el-empty>
 
     <div v-else class="topic-grid">
       <router-link
@@ -25,7 +30,6 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { Loading } from '@element-plus/icons-vue'
 import { getTopicList } from '@/api/entry'
 import type { TopicResponse } from '@/types/entry'
 
@@ -59,10 +63,18 @@ onMounted(async () => {
   color: #909399;
   margin: 0 0 24px;
 }
-.loading-state {
-  text-align: center;
-  padding: 48px 0;
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+.skeleton-card {
+  min-height: 80px;
+}
+.empty-hint {
+  font-size: 13px;
   color: #909399;
+  margin: 0 0 12px;
 }
 .topic-grid {
   display: grid;

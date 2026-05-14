@@ -18,6 +18,8 @@ export interface EntryResponse {
   insightText?: string
   topicId?: string
   topicName?: string
+  reusedCount?: number
+  lastReusedAt?: string
 }
 
 export interface PendingEntryResponse {
@@ -42,4 +44,5 @@ export interface PageResponse<T> {
   items: T[]
   total: number
   hasMore: boolean
+  nextCursor?: string
 }

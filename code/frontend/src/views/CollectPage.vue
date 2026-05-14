@@ -17,8 +17,22 @@
           />
         </el-form-item>
 
+        <el-form-item label="来源类型">
+          <el-select v-model="form.sourceType" clearable placeholder="选择来源类型" style="width: 100%">
+            <el-option label="书籍" value="BOOK" />
+            <el-option label="网页" value="WEB" />
+            <el-option label="对话" value="CONVERSATION" />
+            <el-option label="手工录入" value="MANUAL" />
+            <el-option label="其他" value="OTHER" />
+          </el-select>
+        </el-form-item>
+
         <el-form-item label="来源标题">
-          <el-input v-model="form.sourceTitle" placeholder="例如：微信公众号 / 网页标题 / 手工录入" />
+          <el-input v-model="form.sourceTitle" placeholder="例如：微信公众号 / 网页标题 / 书名" />
+        </el-form-item>
+
+        <el-form-item v-if="form.sourceType === 'WEB'" label="来源链接">
+          <el-input v-model="form.sourceLink" placeholder="https://..." />
         </el-form-item>
 
         <el-form-item label="专题">
@@ -146,6 +160,82 @@
             <span v-else class="meta-text">未归类</span>
             <span class="meta-text">{{ formatTime(entry.capturedAt) }}</span>
           </div>
+
+          <!-- 行内补思考 -->
+          <div v-if="recentInsightEditing === entry.entryId" class="recent-inline-edit">
+            <el-input
+              v-model="recentInsightText"
+              type="textarea"
+              :rows="2"
+              placeholder="写下你的一句话思考..."
+              autofocus
+            />
+            <div class="recent-inline-actions">
+              <el-button type="primary" size="small" :loading="recentSaving" @click="handleRecentSaveInsight(entry.entryId)">保存</el-button>
+              <el-button size="small" @click="recentInsightEditing = ''">取消</el-button>
+            </div>
+          </div>
+
+          <!-- 行内加专题 -->
+          <div v-if="recentTopicEditing === entry.entryId" class="recent-inline-edit">
+            <el-select
+              v-model="recentTopicId"
+              filterable
+              allow-create
+              clearable
+              default-first-option
+              placeholder="选择或输入专题名"
+              :loading="topicLoading"
+              @focus="loadTopicOptions"
+              style="width: 100%"
+            >
+              <el-option v-for="t in topicOptions" :key="t.topicId" :label="t.name" :value="t.topicId" />
+            </el-select>
+            <div class="recent-inline-actions">
+              <el-button type="primary" size="small" :disabled="!recentTopicId" :loading="recentSaving" @click="handleRecentSetTopic(entry.entryId)">保存</el-button>
+              <el-button size="small" @click="recentTopicEditing = ''">取消</el-button>
+            </div>
+          </div>
+
+          <!-- 快捷操作按钮 -->
+          <div v-if="recentInsightEditing !== entry.entryId && recentTopicEditing !== entry.entryId" class="recent-quick-actions">
+            <el-button
+              v-if="!entry.insightText"
+              size="small"
+              text
+              type="warning"
+              @click="recentInsightEditing = entry.entryId; recentInsightText = ''; recentTopicEditing = ''"
+            >补思考</el-button>
+            <el-button
+              v-if="!entry.topicName"
+              size="small"
+              text
+              type="info"
+              @click="recentTopicEditing = entry.entryId; recentTopicId = ''; recentInsightEditing = ''"
+            >加专题</el-button>
+            <el-button size="small" text type="primary" @click="$router.push(`/entry/${entry.entryId}`)">详情</el-button>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
+    <!-- 值得回看（回顾机制） -->
+    <el-card v-if="reviewEntries.length > 0" class="review-card">
+      <template #header>
+        <span class="card-header">值得回看</span>
+      </template>
+      <p class="review-desc">这些内容你已经多次取用，可能值得再看一眼</p>
+      <div class="review-list">
+        <div v-for="entry in reviewEntries" :key="entry.entryId" class="review-item">
+          <div class="review-content">{{ entry.rawContent }}</div>
+          <div v-if="entry.insightText" class="review-insight">💡 {{ entry.insightText }}</div>
+          <div class="review-meta">
+            <el-tag v-if="entry.topicName" size="small" type="info">{{ entry.topicName }}</el-tag>
+            <span class="meta-text">已取用 {{ entry.reusedCount || 0 }} 次</span>
+          </div>
+          <div class="review-actions">
+            <el-button size="small" text type="primary" @click="$router.push(`/entry/${entry.entryId}`)">详情</el-button>
+          </div>
         </div>
       </div>
     </el-card>
@@ -162,7 +252,8 @@ import {
   updateInsight,
   updateEntryTopic,
   getTopicList,
-  getPendingEntries
+  getPendingEntries,
+  getReviewEntries
 } from '@/api/entry'
 import type { EntryResponse, TopicResponse } from '@/types/entry'
 
@@ -173,10 +264,13 @@ const submitting = ref(false)
 const savedEntry = ref<EntryResponse | null>(null)
 const recentEntries = ref<EntryResponse[]>([])
 const pendingCount = ref(0)
+const reviewEntries = ref<EntryResponse[]>([])
 
 const form = ref({
   rawContent: '',
+  sourceType: '',
   sourceTitle: '',
+  sourceLink: '',
   topicName: ''
 })
 
@@ -190,6 +284,12 @@ const topicSaving = ref(false)
 
 const topicOptions = ref<TopicResponse[]>([])
 const topicLoading = ref(false)
+
+const recentInsightEditing = ref('')
+const recentInsightText = ref('')
+const recentTopicEditing = ref('')
+const recentTopicId = ref('')
+const recentSaving = ref(false)
 
 async function loadTopicOptions() {
   if (topicOptions.value.length > 0) return
@@ -215,6 +315,14 @@ async function loadPendingCount() {
   }
 }
 
+async function loadReviewEntries() {
+  try {
+    reviewEntries.value = await getReviewEntries(3)
+  } catch {
+    reviewEntries.value = []
+  }
+}
+
 async function handleSubmit() {
   if (!form.value.rawContent.trim()) {
     ElMessage.warning('请先输入收集内容')
@@ -226,8 +334,9 @@ async function handleSubmit() {
     const result = await createEntry({
       rawContent: form.value.rawContent,
       contentType: 'text',
-      sourceType: 'manual',
+      sourceType: form.value.sourceType || 'MANUAL',
       sourceTitle: form.value.sourceTitle || '手工录入',
+      sourceLink: form.value.sourceLink || undefined,
       topicName: form.value.topicName || undefined
     })
     savedEntry.value = result
@@ -237,14 +346,14 @@ async function handleSubmit() {
     insightText.value = ''
     selectedTopicId.value = ''
     ElMessage.success('保存成功')
-    await Promise.all([loadRecentEntries(), loadPendingCount()])
+    await Promise.all([loadRecentEntries(), loadPendingCount(), loadReviewEntries()])
   } finally {
     submitting.value = false
   }
 }
 
 function handleContinueCollect() {
-  form.value = { rawContent: '', sourceTitle: '', topicName: '' }
+  form.value = { rawContent: '', sourceType: '', sourceTitle: '', sourceLink: '', topicName: '' }
   savedEntry.value = null
   pageState.value = 'input'
 }
@@ -277,13 +386,39 @@ async function handleSetTopic() {
   }
 }
 
+async function handleRecentSaveInsight(entryId: string) {
+  if (!recentInsightText.value.trim()) return
+  recentSaving.value = true
+  try {
+    await updateInsight(entryId, recentInsightText.value.trim())
+    ElMessage.success('思考已保存')
+    recentInsightEditing.value = ''
+    await Promise.all([loadRecentEntries(), loadPendingCount()])
+  } finally {
+    recentSaving.value = false
+  }
+}
+
+async function handleRecentSetTopic(entryId: string) {
+  if (!recentTopicId.value) return
+  recentSaving.value = true
+  try {
+    await updateEntryTopic(entryId, recentTopicId.value)
+    ElMessage.success('已加入专题')
+    recentTopicEditing.value = ''
+    await Promise.all([loadRecentEntries(), loadPendingCount()])
+  } finally {
+    recentSaving.value = false
+  }
+}
+
 function formatTime(value?: string) {
   if (!value) return '-'
   return value.replace('T', ' ').slice(0, 19)
 }
 
 onMounted(async () => {
-  await Promise.all([loadRecentEntries(), loadPendingCount()])
+  await Promise.all([loadRecentEntries(), loadPendingCount(), loadReviewEntries()])
 })
 </script>
 
@@ -417,5 +552,72 @@ onMounted(async () => {
 }
 .meta-text {
   color: #909399;
+}
+.recent-quick-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #ebeef5;
+}
+.recent-inline-edit {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #ebeef5;
+}
+.recent-inline-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.review-card {
+  border-radius: 16px;
+  border-left: 3px solid #e6a23c;
+}
+.review-desc {
+  font-size: 13px;
+  color: #909399;
+  margin: 0 0 12px;
+}
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.review-item {
+  padding: 12px 14px;
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  background: #fffbf0;
+}
+.review-content {
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.review-insight {
+  font-size: 13px;
+  color: #409eff;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  background: #ecf5ff;
+  border-radius: 4px;
+}
+.review-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #909399;
+}
+.review-actions {
+  margin-top: 4px;
 }
 </style>

@@ -67,7 +67,9 @@ export async function searchEntries(params: {
   keyword: string
   topicId?: string
   hasInsight?: boolean
-  offset?: number
+  startDate?: string
+  endDate?: string
+  cursor?: string
   limit?: number
 }) {
   const response = await http.get<PageResponse<EntryResponse>>('/entries/search', { params })
@@ -75,7 +77,12 @@ export async function searchEntries(params: {
 }
 
 export async function recordReuse(entryId: string, reuseType: string) {
-  const response = await http.post<{ success: boolean }>(`/entries/${entryId}/reuse`, { reuseType })
+  const response = await http.post<{ success: boolean; totalCount: number }>(`/entries/${entryId}/reuse`, { reuseType })
+  return response.data
+}
+
+export async function getReviewEntries(limit = 5) {
+  const response = await http.get<EntryResponse[]>('/entries/review', { params: { limit } })
   return response.data
 }
 
@@ -84,9 +91,9 @@ export async function getTopicDetail(topicId: string) {
   return response.data
 }
 
-export async function getTopicEntries(topicId: string, offset = 0, limit = 20) {
+export async function getTopicEntries(topicId: string, cursor?: string, limit = 20) {
   const response = await http.get<PageResponse<EntryResponse>>(`/topics/${topicId}/entries`, {
-    params: { offset, limit }
+    params: { cursor, limit }
   })
   return response.data
 }

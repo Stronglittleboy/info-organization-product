@@ -1,6 +1,13 @@
 services:
   postgres:
-    image: postgres:15-alpine
+    build:
+      context: ./postgres
+      dockerfile: Dockerfile
+      network: host
+      args:
+        HTTP_PROXY: http://127.0.0.1:20171
+        HTTPS_PROXY: http://127.0.0.1:20171
+    image: info-org-postgres:15-zhparser
     container_name: info-org-postgres
     environment:
       POSTGRES_DB: info_organization
@@ -16,6 +23,39 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      network: host
+      args:
+        HTTP_PROXY: http://127.0.0.1:20171
+        HTTPS_PROXY: http://127.0.0.1:20171
+    container_name: info-org-backend
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/info_organization
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      network: host
+      args:
+        HTTP_PROXY: http://127.0.0.1:20171
+        HTTPS_PROXY: http://127.0.0.1:20171
+    container_name: info-org-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
 
 volumes:
   postgres_data:

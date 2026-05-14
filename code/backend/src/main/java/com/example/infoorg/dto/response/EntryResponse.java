@@ -18,4 +18,6 @@ public class EntryResponse {
     private String insightText;
     private String topicId;
     private String topicName;
+    private Integer reusedCount;
+    private LocalDateTime lastReusedAt;
 }

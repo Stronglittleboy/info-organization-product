@@ -11,4 +11,5 @@ public class PageResponse<T> {
     private List<T> items;
     private long total;
     private boolean hasMore;
+    private String nextCursor;
 }

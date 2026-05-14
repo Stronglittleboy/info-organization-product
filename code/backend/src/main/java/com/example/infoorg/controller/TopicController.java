@@ -50,8 +50,24 @@ public class TopicController {
     @GetMapping("/topics/{topicId}/entries")
     public PageResponse<EntryResponse> getTopicEntries(
             @PathVariable String topicId,
-            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") int limit) {
-        return entryService.getEntriesByTopicId(topicId, offset, limit);
+        return entryService.getEntriesByTopicId(topicId, cursor, limit);
+    }
+
+    @PutMapping("/topics/{topicId}")
+    public TopicResponse updateTopic(@PathVariable String topicId,
+                                     @RequestBody Map<String, String> body) {
+        String name = body.get("name");
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("Topic name is required");
+        }
+        return topicService.updateTopic(topicId, name, body.get("description"));
+    }
+
+    @DeleteMapping("/topics/{topicId}")
+    public Map<String, Boolean> deleteTopic(@PathVariable String topicId) {
+        topicService.deleteTopic(topicId);
+        return Map.of("success", true);
     }
 }

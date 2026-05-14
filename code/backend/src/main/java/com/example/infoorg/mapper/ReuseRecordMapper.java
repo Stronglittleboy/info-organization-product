@@ -19,4 +19,10 @@ public interface ReuseRecordMapper {
             WHERE entry_id = CAST(#{entryId} AS uuid)
             """)
     int countByEntryId(@Param("entryId") String entryId);
+
+    @Select("""
+            SELECT MAX(reused_at) FROM reuse_records
+            WHERE entry_id = CAST(#{entryId} AS uuid)
+            """)
+    java.time.LocalDateTime lastReusedAt(@Param("entryId") String entryId);
 }

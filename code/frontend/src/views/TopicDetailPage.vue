@@ -4,18 +4,39 @@
       <router-link to="/topics" class="back-link">← 专题</router-link>
     </div>
 
-    <div v-if="loading" class="loading-state">
-      <el-icon class="is-loading" :size="28"><Loading /></el-icon>
+    <div v-if="loading" class="skeleton-area">
+      <el-skeleton :rows="1" animated style="margin-bottom: 16px" />
+      <el-skeleton :rows="0" animated style="width: 60%; margin-bottom: 20px" />
+      <div v-for="i in 3" :key="i" class="entry-card">
+        <el-skeleton :rows="3" animated />
+      </div>
     </div>
 
     <template v-else-if="topic">
       <div class="topic-header">
         <h2 class="topic-name">{{ topic.name }}</h2>
+        <p v-if="topic.description" class="topic-desc">{{ topic.description }}</p>
         <p class="topic-hint">这里汇集你围绕【{{ topic.name }}】持续积累的内容</p>
         <div class="topic-stat">{{ topic.entryCount }} 条素材</div>
       </div>
 
-      <el-empty v-if="entries.length === 0" description="这个专题还没有素材" />
+      <!-- 专题内搜索 -->
+      <div class="topic-search">
+        <el-input
+          v-model="searchKeyword"
+          placeholder="搜索本专题内容..."
+          clearable
+          @keyup.enter="handleTopicSearch"
+          @clear="handleClearSearch"
+        >
+          <template #append>
+            <el-button :icon="Search" @click="handleTopicSearch" />
+          </template>
+        </el-input>
+      </div>
+
+      <el-empty v-if="entries.length === 0 && !searchKeyword" description="这个专题还没有素材" />
+      <el-empty v-else-if="entries.length === 0 && searchKeyword" description="未找到匹配的内容" />
 
       <div v-else class="entry-list">
         <div v-for="entry in entries" :key="entry.entryId" class="entry-card">
@@ -41,10 +62,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Loading } from '@element-plus/icons-vue'
-import { getTopicDetail, getTopicEntries } from '@/api/entry'
+import { Search } from '@element-plus/icons-vue'
+import { getTopicDetail, getTopicEntries, searchEntries } from '@/api/entry'
+import { debounce } from '@/utils/debounce'
 import type { TopicResponse, EntryResponse } from '@/types/entry'
 
 const route = useRoute()
@@ -55,20 +77,22 @@ const entries = ref<EntryResponse[]>([])
 const loading = ref(true)
 const loadingMore = ref(false)
 const hasMore = ref(false)
-const currentOffset = ref(0)
+const nextCursor = ref<string | undefined>(undefined)
 const PAGE_SIZE = 20
+const searchKeyword = ref('')
+const isSearching = ref(false)
 
 async function loadData() {
   loading.value = true
   try {
     const [t, e] = await Promise.all([
       getTopicDetail(topicId),
-      getTopicEntries(topicId, 0, PAGE_SIZE)
+      getTopicEntries(topicId, undefined, PAGE_SIZE)
     ])
     topic.value = t
     entries.value = e.items
     hasMore.value = e.hasMore
-    currentOffset.value = e.items.length
+    nextCursor.value = e.nextCursor
   } finally {
     loading.value = false
   }
@@ -77,14 +101,63 @@ async function loadData() {
 async function loadMore() {
   loadingMore.value = true
   try {
-    const res = await getTopicEntries(topicId, currentOffset.value, PAGE_SIZE)
+    let res
+    if (isSearching.value && searchKeyword.value.trim()) {
+      res = await searchEntries({ keyword: searchKeyword.value.trim(), topicId, cursor: nextCursor.value, limit: PAGE_SIZE })
+    } else {
+      res = await getTopicEntries(topicId, nextCursor.value, PAGE_SIZE)
+    }
     entries.value.push(...res.items)
     hasMore.value = res.hasMore
-    currentOffset.value += res.items.length
+    nextCursor.value = res.nextCursor
   } finally {
     loadingMore.value = false
   }
 }
+
+async function handleTopicSearch() {
+  const kw = searchKeyword.value.trim()
+  if (!kw) {
+    handleClearSearch()
+    return
+  }
+  isSearching.value = true
+  loading.value = true
+  try {
+    const res = await searchEntries({ keyword: kw, topicId, limit: PAGE_SIZE })
+    entries.value = res.items
+    hasMore.value = res.hasMore
+    nextCursor.value = res.nextCursor
+  } finally {
+    loading.value = false
+  }
+}
+
+async function handleClearSearch() {
+  searchKeyword.value = ''
+  isSearching.value = false
+  loading.value = true
+  try {
+    const res = await getTopicEntries(topicId, undefined, PAGE_SIZE)
+    entries.value = res.items
+    hasMore.value = res.hasMore
+    nextCursor.value = res.nextCursor
+  } finally {
+    loading.value = false
+  }
+}
+
+const debouncedSearch = debounce(() => {
+  handleTopicSearch()
+}, 300)
+
+watch(searchKeyword, (val) => {
+  if (!val.trim()) {
+    handleClearSearch()
+  } else {
+    debouncedSearch()
+  }
+})
 
 function contentPreview(raw?: string) {
   if (!raw) return ''
@@ -114,19 +187,28 @@ onMounted(() => loadData())
   text-decoration: none;
 }
 .back-link:hover { text-decoration: underline; }
-.loading-state {
-  text-align: center;
-  padding: 48px 0;
-  color: #909399;
+.skeleton-area {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.topic-search {
+  margin-bottom: 20px;
 }
 .topic-header {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 .topic-name {
   font-size: 22px;
   font-weight: 700;
   color: #303133;
   margin: 0 0 6px;
+}
+.topic-desc {
+  font-size: 15px;
+  color: #606266;
+  margin: 0 0 6px;
+  line-height: 1.6;
 }
 .topic-hint {
   font-size: 14px;

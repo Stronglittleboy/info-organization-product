@@ -5,15 +5,38 @@
       <span class="page-title">详情</span>
     </div>
 
-    <div v-if="loading" class="loading-state">
-      <el-icon class="is-loading" :size="28"><Loading /></el-icon>
+    <div v-if="loading" class="skeleton-area">
+      <el-card class="section-card">
+        <el-skeleton :rows="4" animated />
+      </el-card>
+      <el-card class="section-card">
+        <el-skeleton :rows="2" animated />
+      </el-card>
+      <el-card class="section-card">
+        <el-skeleton :rows="1" animated />
+      </el-card>
     </div>
 
     <template v-else-if="entry">
-      <!-- 原文区 -->
+      <!-- 原文区（可折叠/展开） -->
       <el-card class="section-card">
-        <template #header><span class="section-title">原文</span></template>
-        <div class="raw-content">{{ entry.rawContent }}</div>
+        <template #header>
+          <div class="section-header-row">
+            <span class="section-title">原文</span>
+            <el-button
+              v-if="entry.rawContent.length > 300"
+              size="small"
+              text
+              type="primary"
+              @click="contentExpanded = !contentExpanded"
+            >
+              {{ contentExpanded ? '收起' : '展开全文' }}
+            </el-button>
+          </div>
+        </template>
+        <div class="raw-content" :class="{ collapsed: !contentExpanded && entry.rawContent.length > 300 }">
+          {{ entry.rawContent }}
+        </div>
       </el-card>
 
       <!-- 来源区 -->
@@ -29,6 +52,11 @@
           <div><span class="label">记录时间：</span>{{ formatTime(entry.capturedAt) }}</div>
         </div>
       </el-card>
+
+      <!-- 复用统计 -->
+      <div v-if="entry.reusedCount && entry.reusedCount > 0" class="reuse-stat">
+        已被取用 {{ entry.reusedCount }} 次<span v-if="entry.lastReusedAt">，最近 {{ formatTime(entry.lastReusedAt) }}</span>
+      </div>
 
       <!-- 思考区 -->
       <el-card class="section-card">
@@ -117,7 +145,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import {
   getEntry,
@@ -133,6 +160,7 @@ const entryId = route.params.entryId as string
 
 const entry = ref<EntryResponse | null>(null)
 const loading = ref(true)
+const contentExpanded = ref(false)
 
 const editingInsight = ref(false)
 const insightDraft = ref('')
@@ -209,8 +237,19 @@ async function handleCopy(type: 'raw' | 'with_insight') {
     : entry.value.rawContent
   try {
     await navigator.clipboard.writeText(text)
-    ElMessage.success('已复制')
-    recordReuse(entryId, type === 'raw' ? 'COPY_RAW' : 'COPY_WITH_INSIGHT').catch(() => {})
+    try {
+      const res = await recordReuse(entryId, type === 'raw' ? 'COPY_RAW' : 'COPY_WITH_INSIGHT')
+      if (entry.value) {
+        entry.value.reusedCount = res.totalCount
+      }
+      if (res.totalCount > 1) {
+        ElMessage.success(`已复制，这是你第 ${res.totalCount} 次取用这条内容`)
+      } else {
+        ElMessage.success('已复制')
+      }
+    } catch {
+      ElMessage.success('已复制')
+    }
   } catch {
     ElMessage.error('复制失败')
   }
@@ -248,10 +287,10 @@ onMounted(() => loadEntry())
   font-weight: 600;
   color: #303133;
 }
-.loading-state {
-  text-align: center;
-  padding: 48px 0;
-  color: #909399;
+.skeleton-area {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 .section-card {
   margin-bottom: 16px;
@@ -262,12 +301,32 @@ onMounted(() => loadEntry())
   font-weight: 600;
   color: #303133;
 }
+.section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
 .raw-content {
   font-size: 15px;
   color: #303133;
   line-height: 1.8;
   white-space: pre-wrap;
   word-break: break-word;
+}
+.raw-content.collapsed {
+  max-height: 180px;
+  overflow: hidden;
+  position: relative;
+  mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+}
+.reuse-stat {
+  font-size: 13px;
+  color: #67c23a;
+  padding: 8px 16px;
+  background: #f0f9eb;
+  border-radius: 8px;
+  margin-bottom: 16px;
 }
 .source-info {
   font-size: 14px;

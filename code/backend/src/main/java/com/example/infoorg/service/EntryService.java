@@ -22,9 +22,13 @@ public interface EntryService {
 
     EntryResponse getEntryById(String entryId);
 
-    PageResponse<EntryResponse> searchEntries(String keyword, String topicId, Boolean hasInsight, int offset, int limit);
+    PageResponse<EntryResponse> searchEntries(String keyword, String topicId, Boolean hasInsight, String startDate, String endDate, String cursor, int limit);
 
-    void recordReuse(String entryId, String reuseType);
+    int recordReuse(String entryId, String reuseType);
 
-    PageResponse<EntryResponse> getEntriesByTopicId(String topicId, int offset, int limit);
+    PageResponse<EntryResponse> getEntriesByTopicId(String topicId, String cursor, int limit);
+
+    void deleteEntry(String entryId);
+
+    List<EntryResponse> getReviewEntries(int limit);
 }

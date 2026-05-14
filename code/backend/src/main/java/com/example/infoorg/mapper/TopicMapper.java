@@ -116,4 +116,18 @@ public interface TopicMapper {
             """)
     @ResultMap("topicWithCount")
     Topic selectById(@Param("topicId") String topicId);
+
+    @Update("""
+            UPDATE topics SET name = #{name}, description = #{description}
+            WHERE id = CAST(#{topicId} AS uuid) AND deleted = 0
+            """)
+    int updateTopic(@Param("topicId") String topicId,
+                    @Param("name") String name,
+                    @Param("description") String description);
+
+    @Update("""
+            UPDATE topics SET deleted = 1
+            WHERE id = CAST(#{topicId} AS uuid) AND deleted = 0
+            """)
+    int softDelete(@Param("topicId") String topicId);
 }

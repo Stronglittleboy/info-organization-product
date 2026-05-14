@@ -46,7 +46,7 @@ public interface EntryMapper {
             LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
             WHERE e.deleted = 0
             ORDER BY e.captured_at DESC
-            LIMIT 10
+            LIMIT 5
             """)
     @Results(id = "entryResult", value = {
             @Result(column = "id", property = "id"),
@@ -102,13 +102,47 @@ public interface EntryMapper {
               AND e.user_id = CAST(#{userId} AS uuid)
               AND (e.insight_text IS NULL OR e.topic_id IS NULL)
               AND (e.skipped_at IS NULL OR e.skipped_at < NOW() - INTERVAL '24 hours')
-            ORDER BY e.captured_at DESC
-            LIMIT #{limit} OFFSET #{offset}
+            ORDER BY
+              (e.insight_text IS NULL) DESC,
+              e.captured_at DESC,
+              (e.skipped_at IS NULL) DESC
+            LIMIT #{limit}
             """)
     @ResultMap("entryResult")
     List<Entry> selectPendingEntries(@Param("userId") String userId,
                                      @Param("offset") int offset,
                                      @Param("limit") int limit);
+
+    @Select("""
+            SELECT
+              e.id::text AS id,
+              e.user_id::text AS user_id,
+              e.raw_content,
+              e.content_type,
+              e.source_type,
+              e.source_title,
+              e.source_link,
+              e.captured_at,
+              e.insight_text,
+              e.topic_id::text AS topic_id,
+              t.name AS topic_name,
+              e.deleted,
+              e.created_at,
+              e.updated_at
+            FROM entries e
+            LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
+            WHERE e.deleted = 0
+              AND e.user_id = CAST(#{userId} AS uuid)
+              AND (e.insight_text IS NULL OR e.topic_id IS NULL)
+              AND (e.skipped_at IS NULL OR e.skipped_at < NOW() - INTERVAL '24 hours')
+              AND e.captured_at < CAST(#{cursor} AS timestamp)
+            ORDER BY e.captured_at DESC
+            LIMIT #{limit}
+            """)
+    @ResultMap("entryResult")
+    List<Entry> selectPendingEntriesByCursor(@Param("userId") String userId,
+                                              @Param("cursor") String cursor,
+                                              @Param("limit") int limit);
 
     @Select("""
             SELECT COUNT(*)
@@ -171,14 +205,18 @@ public interface EntryMapper {
             LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
             WHERE e.deleted = 0
               AND e.user_id = CAST(#{userId} AS uuid)
-              AND (e.raw_content ILIKE '%' || #{keyword} || '%'
-                   OR e.insight_text ILIKE '%' || #{keyword} || '%'
-                   OR e.source_title ILIKE '%' || #{keyword} || '%')
+              AND (
+                  e.search_vector @@ plainto_tsquery('chinese', #{keyword})
+                  OR e.raw_content ILIKE '%' || #{keyword} || '%'
+              )
               <if test="topicId != null"> AND e.topic_id = CAST(#{topicId} AS uuid)</if>
               <if test="hasInsight != null and hasInsight"> AND e.insight_text IS NOT NULL</if>
               <if test="hasInsight != null and !hasInsight"> AND e.insight_text IS NULL</if>
+              <if test="startDate != null"> AND e.captured_at &gt;= CAST(#{startDate} AS timestamp)</if>
+              <if test="endDate != null"> AND e.captured_at &lt;= CAST(#{endDate} AS timestamp)</if>
+              <if test="cursor != null"> AND e.captured_at &lt; CAST(#{cursor} AS timestamp)</if>
             ORDER BY e.captured_at DESC
-            LIMIT #{limit} OFFSET #{offset}
+            LIMIT #{limit}
             </script>
             """)
     @ResultMap("entryResult")
@@ -186,7 +224,9 @@ public interface EntryMapper {
                               @Param("keyword") String keyword,
                               @Param("topicId") String topicId,
                               @Param("hasInsight") Boolean hasInsight,
-                              @Param("offset") int offset,
+                              @Param("startDate") String startDate,
+                              @Param("endDate") String endDate,
+                              @Param("cursor") String cursor,
                               @Param("limit") int limit);
 
     @Select("""
@@ -195,20 +235,26 @@ public interface EntryMapper {
             FROM entries e
             WHERE e.deleted = 0
               AND e.user_id = CAST(#{userId} AS uuid)
-              AND (e.raw_content ILIKE '%' || #{keyword} || '%'
-                   OR e.insight_text ILIKE '%' || #{keyword} || '%'
-                   OR e.source_title ILIKE '%' || #{keyword} || '%')
+              AND (
+                  e.search_vector @@ plainto_tsquery('chinese', #{keyword})
+                  OR e.raw_content ILIKE '%' || #{keyword} || '%'
+              )
               <if test="topicId != null"> AND e.topic_id = CAST(#{topicId} AS uuid)</if>
               <if test="hasInsight != null and hasInsight"> AND e.insight_text IS NOT NULL</if>
               <if test="hasInsight != null and !hasInsight"> AND e.insight_text IS NULL</if>
+              <if test="startDate != null"> AND e.captured_at &gt;= CAST(#{startDate} AS timestamp)</if>
+              <if test="endDate != null"> AND e.captured_at &lt;= CAST(#{endDate} AS timestamp)</if>
             </script>
             """)
     long countSearchEntries(@Param("userId") String userId,
                             @Param("keyword") String keyword,
                             @Param("topicId") String topicId,
-                            @Param("hasInsight") Boolean hasInsight);
+                            @Param("hasInsight") Boolean hasInsight,
+                            @Param("startDate") String startDate,
+                            @Param("endDate") String endDate);
 
     @Select("""
+            <script>
             SELECT
               e.id::text AS id,
               e.user_id::text AS user_id,
@@ -228,12 +274,14 @@ public interface EntryMapper {
             LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
             WHERE e.deleted = 0
               AND e.topic_id = CAST(#{topicId} AS uuid)
+              <if test="cursor != null"> AND e.captured_at &lt; CAST(#{cursor} AS timestamp)</if>
             ORDER BY e.captured_at DESC
-            LIMIT #{limit} OFFSET #{offset}
+            LIMIT #{limit}
+            </script>
             """)
     @ResultMap("entryResult")
     List<Entry> selectByTopicId(@Param("topicId") String topicId,
-                                @Param("offset") int offset,
+                                @Param("cursor") String cursor,
                                 @Param("limit") int limit);
 
     @Select("""
@@ -242,4 +290,43 @@ public interface EntryMapper {
             WHERE deleted = 0 AND topic_id = CAST(#{topicId} AS uuid)
             """)
     long countByTopicId(@Param("topicId") String topicId);
+
+    @Update("""
+            UPDATE entries SET deleted = 1
+            WHERE id = CAST(#{entryId} AS uuid) AND deleted = 0
+            """)
+    int softDelete(@Param("entryId") String entryId);
+
+    @Select("""
+            SELECT
+              e.id::text AS id,
+              e.user_id::text AS user_id,
+              e.raw_content,
+              e.content_type,
+              e.source_type,
+              e.source_title,
+              e.source_link,
+              e.captured_at,
+              e.insight_text,
+              e.topic_id::text AS topic_id,
+              t.name AS topic_name,
+              e.deleted,
+              e.created_at,
+              e.updated_at
+            FROM entries e
+            LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
+            INNER JOIN (
+              SELECT entry_id, COUNT(*) AS cnt
+              FROM reuse_records
+              GROUP BY entry_id
+              HAVING COUNT(*) >= 2
+            ) r ON e.id = r.entry_id
+            WHERE e.deleted = 0
+              AND e.user_id = CAST(#{userId} AS uuid)
+            ORDER BY r.cnt DESC, e.captured_at DESC
+            LIMIT #{limit}
+            """)
+    @ResultMap("entryResult")
+    List<Entry> selectReviewEntries(@Param("userId") String userId,
+                                    @Param("limit") int limit);
 }

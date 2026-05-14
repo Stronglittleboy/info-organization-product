@@ -105,13 +105,27 @@ public class EntryServiceImpl implements EntryService {
         if (entry == null) {
             throw new RuntimeException("Entry not found: " + entryId);
         }
-        return toResponse(entry);
+        EntryResponse resp = toResponse(entry);
+        resp.setReusedCount(reuseRecordMapper.countByEntryId(entryId));
+        resp.setLastReusedAt(reuseRecordMapper.lastReusedAt(entryId));
+        return resp;
     }
 
     @Override
-    public PageResponse<EntryResponse> searchEntries(String keyword, String topicId, Boolean hasInsight, int offset, int limit) {
-        List<Entry> entries = entryMapper.searchEntries(DEFAULT_USER_ID, keyword, topicId, hasInsight, offset, limit);
-        long total = entryMapper.countSearchEntries(DEFAULT_USER_ID, keyword, topicId, hasInsight);
+    public PageResponse<EntryResponse> searchEntries(String keyword, String topicId, Boolean hasInsight, String startDate, String endDate, String cursor, int limit) {
+        List<Entry> entries = entryMapper.searchEntries(DEFAULT_USER_ID, keyword, topicId, hasInsight, startDate, endDate, cursor, limit + 1);
+        long total = entryMapper.countSearchEntries(DEFAULT_USER_ID, keyword, topicId, hasInsight, startDate, endDate);
+
+        boolean hasMore = entries.size() > limit;
+        if (hasMore) {
+            entries = entries.subList(0, limit);
+        }
+
+        String nextCursor = null;
+        if (hasMore && !entries.isEmpty()) {
+            Entry last = entries.get(entries.size() - 1);
+            nextCursor = last.getCapturedAt() != null ? last.getCapturedAt().toString() : null;
+        }
 
         List<EntryResponse> items = entries.stream()
                 .map(this::toResponse)
@@ -120,23 +134,36 @@ public class EntryServiceImpl implements EntryService {
         return PageResponse.<EntryResponse>builder()
                 .items(items)
                 .total(total)
-                .hasMore(offset + limit < total)
+                .hasMore(hasMore)
+                .nextCursor(nextCursor)
                 .build();
     }
 
     @Override
-    public void recordReuse(String entryId, String reuseType) {
+    public int recordReuse(String entryId, String reuseType) {
         Entry entry = entryMapper.selectById(entryId);
         if (entry == null) {
             throw new RuntimeException("Entry not found: " + entryId);
         }
         reuseRecordMapper.insertReuseRecord(UUID.randomUUID().toString(), entryId, DEFAULT_USER_ID, reuseType);
+        return reuseRecordMapper.countByEntryId(entryId);
     }
 
     @Override
-    public PageResponse<EntryResponse> getEntriesByTopicId(String topicId, int offset, int limit) {
-        List<Entry> entries = entryMapper.selectByTopicId(topicId, offset, limit);
+    public PageResponse<EntryResponse> getEntriesByTopicId(String topicId, String cursor, int limit) {
+        List<Entry> entries = entryMapper.selectByTopicId(topicId, cursor, limit + 1);
         long total = entryMapper.countByTopicId(topicId);
+
+        boolean hasMore = entries.size() > limit;
+        if (hasMore) {
+            entries = entries.subList(0, limit);
+        }
+
+        String nextCursor = null;
+        if (hasMore && !entries.isEmpty()) {
+            Entry last = entries.get(entries.size() - 1);
+            nextCursor = last.getCapturedAt() != null ? last.getCapturedAt().toString() : null;
+        }
 
         List<EntryResponse> items = entries.stream()
                 .map(this::toResponse)
@@ -145,8 +172,30 @@ public class EntryServiceImpl implements EntryService {
         return PageResponse.<EntryResponse>builder()
                 .items(items)
                 .total(total)
-                .hasMore(offset + limit < total)
+                .hasMore(hasMore)
+                .nextCursor(nextCursor)
                 .build();
+    }
+
+    @Override
+    public void deleteEntry(String entryId) {
+        int rows = entryMapper.softDelete(entryId);
+        if (rows == 0) {
+            throw new RuntimeException("Entry not found: " + entryId);
+        }
+    }
+
+    @Override
+    public List<EntryResponse> getReviewEntries(int limit) {
+        return entryMapper.selectReviewEntries(DEFAULT_USER_ID, limit)
+                .stream()
+                .map(e -> {
+                    EntryResponse resp = toResponse(e);
+                    resp.setReusedCount(reuseRecordMapper.countByEntryId(e.getId()));
+                    resp.setLastReusedAt(reuseRecordMapper.lastReusedAt(e.getId()));
+                    return resp;
+                })
+                .toList();
     }
 
     private Topic resolveTopic(String topicName) {
