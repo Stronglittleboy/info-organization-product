@@ -1,14 +1,54 @@
 import http from './http'
 import type {
+  CollectTextPayload,
+  CollectUrlPayload,
   CreateEntryRequest,
   EntryResponse,
   PendingEntryResponse,
   TopicResponse,
-  PageResponse
+  PageResponse,
+  UrlMetadataResponse
 } from '@/types/entry'
 
 export async function createEntry(data: CreateEntryRequest) {
   const response = await http.post<EntryResponse>('/entries', data)
+  return response.data
+}
+
+export async function collectText(data: CollectTextPayload) {
+  const response = await http.post<EntryResponse>('/entries/collect-text', data)
+  return response.data
+}
+
+export async function collectUrl(data: CollectUrlPayload) {
+  const response = await http.post<EntryResponse>('/entries/collect-url', data)
+  return response.data
+}
+
+export async function extractUrlMetadata(url: string) {
+  const response = await http.post<UrlMetadataResponse>('/entries/extract-url', { url })
+  return response.data
+}
+
+export async function ocrImage(file: File) {
+  const fd = new FormData()
+  fd.append('file', file)
+  const response = await http.post<{ text: string }>('/entries/ocr', fd)
+  return response.data
+}
+
+export async function uploadImageEntry(params: {
+  file: File
+  insight: string
+  sourceType?: string
+  topicId?: string
+}) {
+  const fd = new FormData()
+  fd.append('file', params.file)
+  fd.append('insight', params.insight)
+  if (params.sourceType) fd.append('sourceType', params.sourceType)
+  if (params.topicId) fd.append('topicId', params.topicId)
+  const response = await http.post<EntryResponse>('/entries/upload-image', fd)
   return response.data
 }
 

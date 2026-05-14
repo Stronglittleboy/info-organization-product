@@ -38,6 +38,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorBody("NOT_FOUND", ex.getMessage()));
     }
 
+    @ExceptionHandler(OptimisticLockException.class)
+    public ResponseEntity<Map<String, Object>> handleOptimisticLock(OptimisticLockException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(errorBody("CONFLICT", ex.getMessage()));
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleRuntime(RuntimeException ex) {
         if (ex.getMessage() != null && ex.getMessage().contains("not found")) {

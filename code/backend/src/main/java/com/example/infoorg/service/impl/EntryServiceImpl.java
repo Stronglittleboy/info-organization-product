@@ -1,20 +1,34 @@
 package com.example.infoorg.service.impl;
 
+import com.example.infoorg.config.OptimisticLockException;
+import com.example.infoorg.config.ResourceNotFoundException;
+import com.example.infoorg.dto.request.CollectTextRequest;
+import com.example.infoorg.dto.request.CollectUrlRequest;
 import com.example.infoorg.dto.request.CreateEntryRequest;
+import com.example.infoorg.dto.request.UpdateEntryRequest;
 import com.example.infoorg.dto.response.EntryResponse;
+import com.example.infoorg.dto.response.GroupedEntriesResponse;
+import com.example.infoorg.dto.response.OcrTextResponse;
 import com.example.infoorg.dto.response.PageResponse;
 import com.example.infoorg.dto.response.PendingEntryResponse;
+import com.example.infoorg.dto.response.UrlMetadataResponse;
 import com.example.infoorg.entity.Entry;
 import com.example.infoorg.entity.Topic;
 import com.example.infoorg.mapper.EntryMapper;
 import com.example.infoorg.mapper.ReuseRecordMapper;
 import com.example.infoorg.mapper.TopicMapper;
 import com.example.infoorg.service.EntryService;
+import com.example.infoorg.service.FileStorageService;
+import com.example.infoorg.service.ImageOcrService;
+import com.example.infoorg.service.UrlMetadataService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -26,6 +40,9 @@ public class EntryServiceImpl implements EntryService {
     private final EntryMapper entryMapper;
     private final TopicMapper topicMapper;
     private final ReuseRecordMapper reuseRecordMapper;
+    private final FileStorageService fileStorageService;
+    private final ImageOcrService imageOcrService;
+    private final UrlMetadataService urlMetadataService;
 
     @Override
     public EntryResponse createEntry(CreateEntryRequest request) {
@@ -43,6 +60,7 @@ public class EntryServiceImpl implements EntryService {
         entry.setSourceLink(request.getSourceLink());
         entry.setCapturedAt(LocalDateTime.now());
         entry.setDeleted(0);
+        entry.setVersion(0);
         entryMapper.insertEntry(entry);
         return toResponse(entry);
     }
@@ -57,9 +75,13 @@ public class EntryServiceImpl implements EntryService {
 
     @Override
     public void updateInsight(String entryId, String insightText) {
-        int rows = entryMapper.updateInsightText(entryId, insightText);
-        if (rows == 0) {
+        Entry entry = entryMapper.selectById(entryId);
+        if (entry == null) {
             throw new RuntimeException("Entry not found: " + entryId);
+        }
+        int rows = entryMapper.updateInsightText(entryId, insightText, entry.getVersion());
+        if (rows == 0) {
+            throw new OptimisticLockException("数据已被其他操作修改，请刷新后重试");
         }
     }
 
@@ -69,9 +91,13 @@ public class EntryServiceImpl implements EntryService {
         if (topic == null) {
             throw new RuntimeException("Topic not found: " + topicId);
         }
-        int rows = entryMapper.updateTopicId(entryId, topicId);
-        if (rows == 0) {
+        Entry entry = entryMapper.selectById(entryId);
+        if (entry == null) {
             throw new RuntimeException("Entry not found: " + entryId);
+        }
+        int rows = entryMapper.updateTopicId(entryId, topicId, entry.getVersion());
+        if (rows == 0) {
+            throw new OptimisticLockException("数据已被其他操作修改，请刷新后重试");
         }
     }
 
@@ -198,6 +224,201 @@ public class EntryServiceImpl implements EntryService {
                 .toList();
     }
 
+    @Override
+    public EntryResponse uploadImageEntry(MultipartFile file, String insight, String sourceType, String topicId) throws Exception {
+        String ocrText = imageOcrService.extractText(file);
+        String storedPath = fileStorageService.store(file, DEFAULT_USER_ID, "images");
+
+        Topic topic = resolveTopicById(topicId);
+        Entry entry = new Entry();
+        entry.setId(UUID.randomUUID().toString());
+        entry.setUserId(DEFAULT_USER_ID);
+        entry.setTopicId(topic == null ? null : topic.getId());
+        entry.setTopicName(topic == null ? null : topic.getName());
+        entry.setRawContent(StringUtils.hasText(ocrText) ? ocrText : "（图片）");
+        entry.setContentType("image");
+        entry.setSourceType(sourceType);
+        entry.setInsightText(insight);
+        entry.setImagePath(storedPath);
+        entry.setImageOcrText(ocrText);
+        entry.setCapturedAt(LocalDateTime.now());
+        entry.setDeleted(0);
+        entry.setVersion(0);
+        entryMapper.insertEntry(entry);
+        return toResponse(entry);
+    }
+
+    @Override
+    public OcrTextResponse ocrImage(MultipartFile file) throws Exception {
+        return new OcrTextResponse(imageOcrService.extractText(file));
+    }
+
+    @Override
+    public EntryResponse collectUrl(CollectUrlRequest request) throws Exception {
+        UrlMetadataResponse meta = urlMetadataService.extractMetadata(request.getUrl().trim());
+        Topic topic = resolveTopicById(request.getTopicId());
+
+        String body = meta.getExtractedText();
+        if (!StringUtils.hasText(body)) {
+            body = StringUtils.hasText(meta.getDescription()) ? meta.getDescription() : request.getUrl();
+        }
+
+        Entry entry = new Entry();
+        entry.setId(UUID.randomUUID().toString());
+        entry.setUserId(DEFAULT_USER_ID);
+        entry.setTopicId(topic == null ? null : topic.getId());
+        entry.setTopicName(topic == null ? null : topic.getName());
+        entry.setRawContent(body);
+        entry.setContentType("url");
+        entry.setSourceType(request.getSourceType());
+        entry.setInsightText(request.getInsight());
+        entry.setUrl(request.getUrl().trim());
+        entry.setUrlTitle(meta.getTitle());
+        entry.setUrlDescription(meta.getDescription());
+        entry.setUrlExtractedText(meta.getExtractedText());
+        entry.setCapturedAt(LocalDateTime.now());
+        entry.setDeleted(0);
+        entry.setVersion(0);
+        entryMapper.insertEntry(entry);
+        return toResponse(entry);
+    }
+
+    @Override
+    public UrlMetadataResponse extractUrlMetadata(String url) throws Exception {
+        return urlMetadataService.extractMetadata(url.trim());
+    }
+
+    @Override
+    public EntryResponse collectText(CollectTextRequest request) {
+        Topic topic = resolveTopicById(request.getTopicId());
+        Entry entry = new Entry();
+        entry.setId(UUID.randomUUID().toString());
+        entry.setUserId(DEFAULT_USER_ID);
+        entry.setTopicId(topic == null ? null : topic.getId());
+        entry.setTopicName(topic == null ? null : topic.getName());
+        entry.setRawContent(request.getRawContent());
+        entry.setContentType("text");
+        entry.setSourceType(request.getSourceType());
+        entry.setInsightText(StringUtils.hasText(request.getInsight()) ? request.getInsight().trim() : null);
+        entry.setCapturedAt(LocalDateTime.now());
+        entry.setDeleted(0);
+        entry.setVersion(0);
+        entryMapper.insertEntry(entry);
+        return toResponse(entry);
+    }
+
+    @Override
+    public PageResponse<EntryResponse> listEntries(int page, int size, String contentType, String topicId) {
+        int p = Math.max(page, 1);
+        int s = size < 1 ? 20 : Math.min(size, 100);
+        int offset = (p - 1) * s;
+        long total = entryMapper.countEntriesPage(DEFAULT_USER_ID, contentType, topicId);
+        List<Entry> rows = entryMapper.selectEntriesPage(DEFAULT_USER_ID, contentType, topicId, offset, s);
+        List<EntryResponse> items = rows.stream().map(this::toResponse).toList();
+        return PageResponse.<EntryResponse>builder()
+                .items(items)
+                .total(total)
+                .hasMore(offset + s < total)
+                .build();
+    }
+
+    @Override
+    public GroupedEntriesResponse getGroupedEntries() {
+        List<Entry> rows = entryMapper.selectEntriesRecentForUser(DEFAULT_USER_ID, 500);
+        LocalDate today = LocalDate.now();
+        LocalDateTime weekStart = today.atStartOfDay().minusDays(7);
+
+        List<EntryResponse> todayList = new ArrayList<>();
+        List<EntryResponse> yesterdayList = new ArrayList<>();
+        List<EntryResponse> weekList = new ArrayList<>();
+        List<EntryResponse> earlierList = new ArrayList<>();
+
+        for (Entry e : rows) {
+            if (e.getCapturedAt() == null) {
+                continue;
+            }
+            LocalDate d = e.getCapturedAt().toLocalDate();
+            EntryResponse r = toResponse(e);
+            if (d.equals(today)) {
+                todayList.add(r);
+            } else if (d.equals(today.minusDays(1))) {
+                yesterdayList.add(r);
+            } else if (!e.getCapturedAt().isBefore(weekStart)) {
+                weekList.add(r);
+            } else {
+                earlierList.add(r);
+            }
+        }
+
+        return GroupedEntriesResponse.builder()
+                .today(todayList)
+                .yesterday(yesterdayList)
+                .thisWeek(weekList)
+                .earlier(earlierList)
+                .build();
+    }
+
+    @Override
+    public EntryResponse updateEntry(String entryId, UpdateEntryRequest request) {
+        Entry existing = entryMapper.selectById(entryId);
+        if (existing == null) {
+            throw new ResourceNotFoundException("Entry not found: " + entryId);
+        }
+        Entry patch = new Entry();
+        patch.setId(entryId);
+        patch.setVersion(existing.getVersion());
+        if (request.getRawContent() != null) {
+            patch.setRawContent(request.getRawContent());
+        }
+        if (request.getInsightText() != null) {
+            patch.setInsightText(request.getInsightText());
+        }
+        if (request.getTopicId() != null) {
+            if (!StringUtils.hasText(request.getTopicId())) {
+                throw new IllegalArgumentException("topicId 不能为空字符串");
+            }
+            Topic topic = topicMapper.selectById(request.getTopicId());
+            if (topic == null) {
+                throw new ResourceNotFoundException("Topic not found: " + request.getTopicId());
+            }
+            patch.setTopicId(topic.getId());
+        }
+        if (request.getSourceType() != null) {
+            patch.setSourceType(request.getSourceType());
+        }
+        if (request.getSourceTitle() != null) {
+            patch.setSourceTitle(request.getSourceTitle());
+        }
+        if (request.getSourceLink() != null) {
+            patch.setSourceLink(request.getSourceLink());
+        }
+        boolean any = request.getRawContent() != null
+                || request.getInsightText() != null
+                || request.getTopicId() != null
+                || request.getSourceType() != null
+                || request.getSourceTitle() != null
+                || request.getSourceLink() != null;
+        if (!any) {
+            return getEntryById(entryId);
+        }
+        int rows = entryMapper.updateEntrySelective(patch);
+        if (rows == 0) {
+            throw new OptimisticLockException("数据已被其他操作修改，请刷新后重试");
+        }
+        return getEntryById(entryId);
+    }
+
+    private Topic resolveTopicById(String topicId) {
+        if (!StringUtils.hasText(topicId)) {
+            return null;
+        }
+        Topic topic = topicMapper.selectById(topicId.trim());
+        if (topic == null) {
+            throw new ResourceNotFoundException("Topic not found: " + topicId);
+        }
+        return topic;
+    }
+
     private Topic resolveTopic(String topicName) {
         if (!StringUtils.hasText(topicName)) {
             return null;
@@ -244,6 +465,10 @@ public class EntryServiceImpl implements EntryService {
     }
 
     private EntryResponse toResponse(Entry entry) {
+        String thumb = null;
+        if ("image".equals(entry.getContentType()) && StringUtils.hasText(entry.getImagePath())) {
+            thumb = fileStorageService.getFileUrl(entry.getImagePath());
+        }
         return EntryResponse.builder()
                 .entryId(entry.getId())
                 .rawContent(entry.getRawContent())
@@ -255,6 +480,12 @@ public class EntryServiceImpl implements EntryService {
                 .insightText(entry.getInsightText())
                 .topicId(entry.getTopicId())
                 .topicName(entry.getTopicName())
+                .imagePath(entry.getImagePath())
+                .imageOcrText(entry.getImageOcrText())
+                .url(entry.getUrl())
+                .urlTitle(entry.getUrlTitle())
+                .urlDescription(entry.getUrlDescription())
+                .thumbnailUrl(thumb)
                 .build();
     }
 }

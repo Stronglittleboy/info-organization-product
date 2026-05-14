@@ -7,8 +7,10 @@ services:
       args:
         HTTP_PROXY: http://127.0.0.1:20171
         HTTPS_PROXY: http://127.0.0.1:20171
-    image: info-org-postgres:15-zhparser
+    image: info-org-postgres:15-jieba
     container_name: info-org-postgres
+    # 注意：POSTGRES_* 仅在数据卷首次初始化时生效。若复用旧卷导致与 DB_PASSWORD 不一致，
+    # 可在库内执行：ALTER USER postgres WITH PASSWORD 'postgres';（与下方 backend 环境变量对齐）
     environment:
       POSTGRES_DB: info_organization
       POSTGRES_USER: postgres
@@ -53,7 +55,7 @@ services:
         HTTPS_PROXY: http://127.0.0.1:20171
     container_name: info-org-frontend
     ports:
-      - "80:80"
+      - "8081:80"
     depends_on:
       - backend
 

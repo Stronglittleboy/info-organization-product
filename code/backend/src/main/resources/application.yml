@@ -10,6 +10,10 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 12MB
 
 mybatis-plus:
   configuration:
@@ -26,6 +30,18 @@ server:
   port: 8080
   servlet:
     context-path: /api
+
+storage:
+  mode: local
+  minio:
+    endpoint: http://192.168.31.173:9000
+    access-key: minioadmin
+    secret-key: minioadmin123
+    bucket: info-org-files
+    public-url: http://192.168.31.173:9000
+  local:
+    base-path: /vol3/1000/private/workProject/info-organization-product/data/uploads
+    public-base-url: http://192.168.31.173:8080/api
 
 jwt:
   secret: ${JWT_SECRET:your-secret-key-change-in-production-min-256-bits-long}

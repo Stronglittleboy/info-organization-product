@@ -1,5 +1,4 @@
--- V8: 使用 'chinese' 配置回填所有 search_vector，并重建 GIN 索引
--- 千万级数据量下此迁移可能耗时数分钟，分批执行避免长事务
+-- V8: 使用 jiebacfg 分批回填所有 search_vector 并重建索引
 
 DO $$
 DECLARE
@@ -7,25 +6,22 @@ DECLARE
     affected INT;
 BEGIN
     LOOP
-        UPDATE entries SET search_vector =
-            setweight(to_tsvector('chinese', COALESCE(raw_content, '')), 'A') ||
-            setweight(to_tsvector('chinese', COALESCE(insight_text, '')), 'B') ||
-            setweight(to_tsvector('chinese', COALESCE(source_title, '')), 'C')
-        WHERE id IN (
+        WITH batch AS (
             SELECT id FROM entries
             WHERE search_vector IS NULL
-               OR search_vector != (
-                   setweight(to_tsvector('chinese', COALESCE(raw_content, '')), 'A') ||
-                   setweight(to_tsvector('chinese', COALESCE(insight_text, '')), 'B') ||
-                   setweight(to_tsvector('chinese', COALESCE(source_title, '')), 'C')
-               )
+               OR search_vector = ''::tsvector
             LIMIT batch_size
-        );
+            FOR UPDATE SKIP LOCKED
+        )
+        UPDATE entries e SET search_vector =
+            setweight(to_tsvector('jiebacfg', COALESCE(e.raw_content, '')), 'A') ||
+            setweight(to_tsvector('jiebacfg', COALESCE(e.insight_text, '')), 'B') ||
+            setweight(to_tsvector('jiebacfg', COALESCE(e.source_title, '')), 'C')
+        FROM batch WHERE e.id = batch.id;
         GET DIAGNOSTICS affected = ROW_COUNT;
         EXIT WHEN affected = 0;
-        RAISE NOTICE 'Updated % rows', affected;
+        RAISE NOTICE 'Backfilled % rows', affected;
     END LOOP;
 END $$;
 
--- 重建 GIN 索引以匹配新的分词结果
 REINDEX INDEX idx_entries_search_vector;

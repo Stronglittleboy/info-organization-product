@@ -7,6 +7,27 @@ export interface CreateEntryRequest {
   topicName?: string
 }
 
+export interface CollectTextPayload {
+  rawContent: string
+  insight?: string
+  sourceType?: string
+  topicId?: string
+}
+
+export interface CollectUrlPayload {
+  url: string
+  insight: string
+  sourceType?: string
+  topicId?: string
+}
+
+export interface UrlMetadataResponse {
+  title?: string
+  description?: string
+  extractedText?: string
+  favicon?: string
+}
+
 export interface EntryResponse {
   entryId: string
   rawContent: string
@@ -20,6 +41,12 @@ export interface EntryResponse {
   topicName?: string
   reusedCount?: number
   lastReusedAt?: string
+  imagePath?: string
+  imageOcrText?: string
+  url?: string
+  urlTitle?: string
+  urlDescription?: string
+  thumbnailUrl?: string
 }
 
 export interface PendingEntryResponse {

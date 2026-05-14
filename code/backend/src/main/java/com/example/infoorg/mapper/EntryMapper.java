@@ -10,7 +10,9 @@ public interface EntryMapper {
 
     @Insert("""
             INSERT INTO entries (
-              id, user_id, topic_id, raw_content, content_type, source_type, source_title, source_link, captured_at, deleted
+              id, user_id, topic_id, raw_content, content_type, source_type, source_title, source_link,
+              captured_at, insight_text, deleted, version,
+              image_path, image_ocr_text, url, url_title, url_description, url_extracted_text
             ) VALUES (
               CAST(#{id} AS uuid),
               CAST(#{userId} AS uuid),
@@ -21,7 +23,15 @@ public interface EntryMapper {
               #{sourceTitle},
               #{sourceLink},
               #{capturedAt},
-              #{deleted}
+              #{insightText},
+              #{deleted},
+              COALESCE(#{version}, 0),
+              #{imagePath},
+              #{imageOcrText},
+              #{url},
+              #{urlTitle},
+              #{urlDescription},
+              #{urlExtractedText}
             )
             """)
     int insertEntry(Entry entry);
@@ -40,8 +50,15 @@ public interface EntryMapper {
               e.topic_id::text AS topic_id,
               t.name AS topic_name,
               e.deleted,
+              e.version,
               e.created_at,
-              e.updated_at
+              e.updated_at,
+              e.image_path,
+              e.image_ocr_text,
+              e.url,
+              e.url_title,
+              e.url_description,
+              e.url_extracted_text
             FROM entries e
             LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
             WHERE e.deleted = 0
@@ -61,24 +78,35 @@ public interface EntryMapper {
             @Result(column = "topic_id", property = "topicId"),
             @Result(column = "topic_name", property = "topicName"),
             @Result(column = "deleted", property = "deleted"),
+            @Result(column = "version", property = "version"),
             @Result(column = "created_at", property = "createdAt"),
-            @Result(column = "updated_at", property = "updatedAt")
+            @Result(column = "updated_at", property = "updatedAt"),
+            @Result(column = "image_path", property = "imagePath"),
+            @Result(column = "image_ocr_text", property = "imageOcrText"),
+            @Result(column = "url", property = "url"),
+            @Result(column = "url_title", property = "urlTitle"),
+            @Result(column = "url_description", property = "urlDescription"),
+            @Result(column = "url_extracted_text", property = "urlExtractedText")
     })
     List<Entry> selectRecentEntries();
 
     @Update("""
             UPDATE entries
-            SET insight_text = #{insightText}
-            WHERE id = CAST(#{entryId} AS uuid) AND deleted = 0
+            SET insight_text = #{insightText}, version = version + 1
+            WHERE id = CAST(#{entryId} AS uuid) AND deleted = 0 AND version = #{version}
             """)
-    int updateInsightText(@Param("entryId") String entryId, @Param("insightText") String insightText);
+    int updateInsightText(@Param("entryId") String entryId,
+                          @Param("insightText") String insightText,
+                          @Param("version") int version);
 
     @Update("""
             UPDATE entries
-            SET topic_id = CAST(#{topicId} AS uuid)
-            WHERE id = CAST(#{entryId} AS uuid) AND deleted = 0
+            SET topic_id = CAST(#{topicId} AS uuid), version = version + 1
+            WHERE id = CAST(#{entryId} AS uuid) AND deleted = 0 AND version = #{version}
             """)
-    int updateTopicId(@Param("entryId") String entryId, @Param("topicId") String topicId);
+    int updateTopicId(@Param("entryId") String entryId,
+                      @Param("topicId") String topicId,
+                      @Param("version") int version);
 
     @Select("""
             SELECT
@@ -94,8 +122,15 @@ public interface EntryMapper {
               e.topic_id::text AS topic_id,
               t.name AS topic_name,
               e.deleted,
+              e.version,
               e.created_at,
-              e.updated_at
+              e.updated_at,
+              e.image_path,
+              e.image_ocr_text,
+              e.url,
+              e.url_title,
+              e.url_description,
+              e.url_extracted_text
             FROM entries e
             LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
             WHERE e.deleted = 0
@@ -106,7 +141,7 @@ public interface EntryMapper {
               (e.insight_text IS NULL) DESC,
               e.captured_at DESC,
               (e.skipped_at IS NULL) DESC
-            LIMIT #{limit}
+            LIMIT #{limit} OFFSET #{offset}
             """)
     @ResultMap("entryResult")
     List<Entry> selectPendingEntries(@Param("userId") String userId,
@@ -127,8 +162,15 @@ public interface EntryMapper {
               e.topic_id::text AS topic_id,
               t.name AS topic_name,
               e.deleted,
+              e.version,
               e.created_at,
-              e.updated_at
+              e.updated_at,
+              e.image_path,
+              e.image_ocr_text,
+              e.url,
+              e.url_title,
+              e.url_description,
+              e.url_extracted_text
             FROM entries e
             LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
             WHERE e.deleted = 0
@@ -175,8 +217,15 @@ public interface EntryMapper {
               e.topic_id::text AS topic_id,
               t.name AS topic_name,
               e.deleted,
+              e.version,
               e.created_at,
-              e.updated_at
+              e.updated_at,
+              e.image_path,
+              e.image_ocr_text,
+              e.url,
+              e.url_title,
+              e.url_description,
+              e.url_extracted_text
             FROM entries e
             LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
             WHERE e.id = CAST(#{entryId} AS uuid) AND e.deleted = 0
@@ -199,15 +248,25 @@ public interface EntryMapper {
               e.topic_id::text AS topic_id,
               t.name AS topic_name,
               e.deleted,
+              e.version,
               e.created_at,
-              e.updated_at
+              e.updated_at,
+              e.image_path,
+              e.image_ocr_text,
+              e.url,
+              e.url_title,
+              e.url_description,
+              e.url_extracted_text
             FROM entries e
             LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
             WHERE e.deleted = 0
               AND e.user_id = CAST(#{userId} AS uuid)
               AND (
-                  e.search_vector @@ plainto_tsquery('chinese', #{keyword})
+                  e.search_vector @@ plainto_tsquery('jiebacfg', #{keyword})
                   OR e.raw_content ILIKE '%' || #{keyword} || '%'
+                  OR e.insight_text ILIKE '%' || #{keyword} || '%'
+                  OR e.url_title ILIKE '%' || #{keyword} || '%'
+                  OR e.image_ocr_text ILIKE '%' || #{keyword} || '%'
               )
               <if test="topicId != null"> AND e.topic_id = CAST(#{topicId} AS uuid)</if>
               <if test="hasInsight != null and hasInsight"> AND e.insight_text IS NOT NULL</if>
@@ -236,8 +295,11 @@ public interface EntryMapper {
             WHERE e.deleted = 0
               AND e.user_id = CAST(#{userId} AS uuid)
               AND (
-                  e.search_vector @@ plainto_tsquery('chinese', #{keyword})
+                  e.search_vector @@ plainto_tsquery('jiebacfg', #{keyword})
                   OR e.raw_content ILIKE '%' || #{keyword} || '%'
+                  OR e.insight_text ILIKE '%' || #{keyword} || '%'
+                  OR e.url_title ILIKE '%' || #{keyword} || '%'
+                  OR e.image_ocr_text ILIKE '%' || #{keyword} || '%'
               )
               <if test="topicId != null"> AND e.topic_id = CAST(#{topicId} AS uuid)</if>
               <if test="hasInsight != null and hasInsight"> AND e.insight_text IS NOT NULL</if>
@@ -268,8 +330,15 @@ public interface EntryMapper {
               e.topic_id::text AS topic_id,
               t.name AS topic_name,
               e.deleted,
+              e.version,
               e.created_at,
-              e.updated_at
+              e.updated_at,
+              e.image_path,
+              e.image_ocr_text,
+              e.url,
+              e.url_title,
+              e.url_description,
+              e.url_extracted_text
             FROM entries e
             LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
             WHERE e.deleted = 0
@@ -311,8 +380,15 @@ public interface EntryMapper {
               e.topic_id::text AS topic_id,
               t.name AS topic_name,
               e.deleted,
+              e.version,
               e.created_at,
-              e.updated_at
+              e.updated_at,
+              e.image_path,
+              e.image_ocr_text,
+              e.url,
+              e.url_title,
+              e.url_description,
+              e.url_extracted_text
             FROM entries e
             LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
             INNER JOIN (
@@ -329,4 +405,117 @@ public interface EntryMapper {
     @ResultMap("entryResult")
     List<Entry> selectReviewEntries(@Param("userId") String userId,
                                     @Param("limit") int limit);
+
+    @Select("""
+            <script>
+            SELECT
+              e.id::text AS id,
+              e.user_id::text AS user_id,
+              e.raw_content,
+              e.content_type,
+              e.source_type,
+              e.source_title,
+              e.source_link,
+              e.captured_at,
+              e.insight_text,
+              e.topic_id::text AS topic_id,
+              t.name AS topic_name,
+              e.deleted,
+              e.version,
+              e.created_at,
+              e.updated_at,
+              e.image_path,
+              e.image_ocr_text,
+              e.url,
+              e.url_title,
+              e.url_description,
+              e.url_extracted_text
+            FROM entries e
+            LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
+            WHERE e.deleted = 0
+              AND e.user_id = CAST(#{userId} AS uuid)
+              <if test="contentType != null and contentType != ''">AND e.content_type = #{contentType}</if>
+              <if test="topicId != null and topicId != ''">AND e.topic_id = CAST(#{topicId} AS uuid)</if>
+            ORDER BY e.captured_at DESC
+            LIMIT #{limit} OFFSET #{offset}
+            </script>
+            """)
+    @ResultMap("entryResult")
+    List<Entry> selectEntriesPage(@Param("userId") String userId,
+                                  @Param("contentType") String contentType,
+                                  @Param("topicId") String topicId,
+                                  @Param("offset") int offset,
+                                  @Param("limit") int limit);
+
+    @Select("""
+            <script>
+            SELECT COUNT(*)
+            FROM entries e
+            WHERE e.deleted = 0
+              AND e.user_id = CAST(#{userId} AS uuid)
+              <if test="contentType != null and contentType != ''">AND e.content_type = #{contentType}</if>
+              <if test="topicId != null and topicId != ''">AND e.topic_id = CAST(#{topicId} AS uuid)</if>
+            </script>
+            """)
+    long countEntriesPage(@Param("userId") String userId,
+                          @Param("contentType") String contentType,
+                          @Param("topicId") String topicId);
+
+    @Select("""
+            SELECT
+              e.id::text AS id,
+              e.user_id::text AS user_id,
+              e.raw_content,
+              e.content_type,
+              e.source_type,
+              e.source_title,
+              e.source_link,
+              e.captured_at,
+              e.insight_text,
+              e.topic_id::text AS topic_id,
+              t.name AS topic_name,
+              e.deleted,
+              e.version,
+              e.created_at,
+              e.updated_at,
+              e.image_path,
+              e.image_ocr_text,
+              e.url,
+              e.url_title,
+              e.url_description,
+              e.url_extracted_text
+            FROM entries e
+            LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
+            WHERE e.deleted = 0
+              AND e.user_id = CAST(#{userId} AS uuid)
+            ORDER BY e.captured_at DESC
+            LIMIT #{limit}
+            """)
+    @ResultMap("entryResult")
+    List<Entry> selectEntriesRecentForUser(@Param("userId") String userId, @Param("limit") int limit);
+
+    @Update("""
+            <script>
+            UPDATE entries
+            <set>
+              <if test="rawContent != null">raw_content = #{rawContent},</if>
+              <if test="insightText != null">insight_text = #{insightText},</if>
+              <if test="topicId != null">topic_id = CAST(#{topicId} AS uuid),</if>
+              <if test="sourceType != null">source_type = #{sourceType},</if>
+              <if test="sourceTitle != null">source_title = #{sourceTitle},</if>
+              <if test="sourceLink != null">source_link = #{sourceLink},</if>
+              <if test="contentType != null">content_type = #{contentType},</if>
+              <if test="imagePath != null">image_path = #{imagePath},</if>
+              <if test="imageOcrText != null">image_ocr_text = #{imageOcrText},</if>
+              <if test="url != null">url = #{url},</if>
+              <if test="urlTitle != null">url_title = #{urlTitle},</if>
+              <if test="urlDescription != null">url_description = #{urlDescription},</if>
+              <if test="urlExtractedText != null">url_extracted_text = #{urlExtractedText},</if>
+              version = version + 1,
+              updated_at = NOW()
+            </set>
+            WHERE id = CAST(#{id} AS uuid) AND deleted = 0 AND version = #{version}
+            </script>
+            """)
+    int updateEntrySelective(Entry entry);
 }

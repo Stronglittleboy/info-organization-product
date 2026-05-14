@@ -42,8 +42,31 @@ public class Entry {
     @TableField(exist = false)
     private String topicName;
 
+    // 图片字段
+    @TableField("image_path")
+    private String imagePath;
+
+    @TableField("image_ocr_text")
+    private String imageOcrText;
+
+    // URL 字段
+    @TableField("url")
+    private String url;
+
+    @TableField("url_title")
+    private String urlTitle;
+
+    @TableField("url_description")
+    private String urlDescription;
+
+    @TableField("url_extracted_text")
+    private String urlExtractedText;
+
     @TableField("deleted")
     private Integer deleted;
+
+    @TableField("version")
+    private Integer version;
 
     @TableField("created_at")
     private LocalDateTime createdAt;

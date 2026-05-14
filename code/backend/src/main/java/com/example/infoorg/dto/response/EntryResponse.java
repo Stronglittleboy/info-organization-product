@@ -20,4 +20,10 @@ public class EntryResponse {
     private String topicName;
     private Integer reusedCount;
     private LocalDateTime lastReusedAt;
+    private String imagePath;
+    private String imageOcrText;
+    private String url;
+    private String urlTitle;
+    private String urlDescription;
+    private String thumbnailUrl;
 }

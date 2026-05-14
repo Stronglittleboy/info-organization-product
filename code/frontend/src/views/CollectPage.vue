@@ -7,33 +7,119 @@
       </template>
 
       <el-form @submit.prevent>
-        <el-form-item label="内容">
-          <el-input
-            v-model="form.rawContent"
-            type="textarea"
-            :rows="8"
-            placeholder="输入你想收集的内容"
-            autofocus
-          />
+        <el-form-item label="类型">
+          <el-radio-group v-model="materialMode">
+            <el-radio-button value="text">文本</el-radio-button>
+            <el-radio-button value="url">链接</el-radio-button>
+            <el-radio-button value="image">图片</el-radio-button>
+          </el-radio-group>
         </el-form-item>
 
-        <el-form-item label="来源类型">
-          <el-select v-model="form.sourceType" clearable placeholder="选择来源类型" style="width: 100%">
-            <el-option label="书籍" value="BOOK" />
-            <el-option label="网页" value="WEB" />
-            <el-option label="对话" value="CONVERSATION" />
-            <el-option label="手工录入" value="MANUAL" />
-            <el-option label="其他" value="OTHER" />
-          </el-select>
-        </el-form-item>
+        <!-- 文本 -->
+        <template v-if="materialMode === 'text'">
+          <el-form-item label="内容">
+            <el-input
+              v-model="form.rawContent"
+              type="textarea"
+              :rows="8"
+              placeholder="输入你想收集的内容"
+              autofocus
+            />
+          </el-form-item>
+          <el-form-item label="思考（可选）">
+            <el-input
+              v-model="form.textInsight"
+              type="textarea"
+              :rows="2"
+              placeholder="有思考时可填写；填写后将使用「文本收集」接口并支持专题 ID"
+            />
+          </el-form-item>
+          <el-form-item label="来源类型">
+            <el-select v-model="form.sourceType" clearable placeholder="选择来源类型" style="width: 100%">
+              <el-option label="书籍" value="BOOK" />
+              <el-option label="网页" value="WEB" />
+              <el-option label="对话" value="CONVERSATION" />
+              <el-option label="手工录入" value="MANUAL" />
+              <el-option label="其他" value="OTHER" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="来源标题">
+            <el-input v-model="form.sourceTitle" placeholder="例如：微信公众号 / 网页标题 / 书名" />
+          </el-form-item>
+          <el-form-item v-if="form.sourceType === 'WEB'" label="来源链接">
+            <el-input v-model="form.sourceLink" placeholder="https://..." />
+          </el-form-item>
+        </template>
 
-        <el-form-item label="来源标题">
-          <el-input v-model="form.sourceTitle" placeholder="例如：微信公众号 / 网页标题 / 书名" />
-        </el-form-item>
+        <!-- 链接 -->
+        <template v-else-if="materialMode === 'url'">
+          <el-form-item label="网页地址">
+            <el-input v-model="urlForm.url" placeholder="https://..." clearable />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" plain :loading="urlMetaLoading" @click="fetchUrlMeta">
+              拉取网页信息
+            </el-button>
+          </el-form-item>
+          <div v-if="urlPreview" class="url-preview">
+            <div class="url-preview-title">{{ urlPreview.title || '（无标题）' }}</div>
+            <p class="url-preview-desc">{{ urlPreview.description || '（无描述）' }}</p>
+            <p v-if="urlPreview.extractedText" class="url-preview-text">{{ urlPreview.extractedText }}</p>
+          </div>
+          <el-form-item label="你的思考" required>
+            <el-input
+              v-model="urlForm.insight"
+              type="textarea"
+              :rows="3"
+              placeholder="链接收集需要填写思考"
+            />
+          </el-form-item>
+          <el-form-item label="来源类型">
+            <el-select v-model="urlForm.sourceType" clearable placeholder="可选" style="width: 100%">
+              <el-option label="网页" value="网页" />
+              <el-option label="文章" value="文章" />
+            </el-select>
+          </el-form-item>
+        </template>
 
-        <el-form-item v-if="form.sourceType === 'WEB'" label="来源链接">
-          <el-input v-model="form.sourceLink" placeholder="https://..." />
-        </el-form-item>
+        <!-- 图片 -->
+        <template v-else>
+          <el-form-item label="上传图片">
+            <el-upload
+              drag
+              :auto-upload="false"
+              :limit="1"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              :on-change="onImageFileChange"
+              :on-remove="onImageFileRemove"
+            >
+              <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+              <div class="el-upload__text">拖拽到此处，或 <em>点击选择</em></div>
+            </el-upload>
+          </el-form-item>
+          <el-form-item v-if="imageOcrPreview" label="识别文字（预览）">
+            <el-input v-model="imageOcrPreview" type="textarea" :rows="4" readonly />
+          </el-form-item>
+          <el-form-item>
+            <el-button :disabled="!imageFile" :loading="ocrLoading" @click="runOcrPreview">
+              重新识别文字
+            </el-button>
+          </el-form-item>
+          <el-form-item label="你的思考" required>
+            <el-input
+              v-model="imageForm.insight"
+              type="textarea"
+              :rows="3"
+              placeholder="图片收集需要填写思考"
+            />
+          </el-form-item>
+          <el-form-item label="来源类型">
+            <el-select v-model="imageForm.sourceType" clearable placeholder="可选" style="width: 100%">
+              <el-option label="截图" value="截图" />
+              <el-option label="照片" value="照片" />
+            </el-select>
+          </el-form-item>
+        </template>
 
         <el-form-item label="专题">
           <el-select
@@ -70,7 +156,7 @@
         <span>已保存</span>
       </div>
 
-      <div class="feedback-preview">{{ savedEntry?.rawContent }}</div>
+      <div class="feedback-preview">{{ savedPreview }}</div>
 
       <div class="feedback-actions">
         <el-button type="primary" size="large" @click="handleContinueCollect">
@@ -150,8 +236,8 @@
 
       <div v-else class="recent-list">
         <div v-for="entry in recentEntries" :key="entry.entryId" class="recent-item">
-          <div class="recent-title">{{ entry.sourceTitle || '未命名来源' }}</div>
-          <div class="recent-content">{{ entry.rawContent }}</div>
+          <div class="recent-title">{{ recentTitle(entry) }}</div>
+          <div class="recent-content">{{ recentBody(entry) }}</div>
           <div v-if="entry.insightText" class="recent-insight">
             💡 {{ entry.insightText }}
           </div>
@@ -227,7 +313,8 @@
       <p class="review-desc">这些内容你已经多次取用，可能值得再看一眼</p>
       <div class="review-list">
         <div v-for="entry in reviewEntries" :key="entry.entryId" class="review-item">
-          <div class="review-content">{{ entry.rawContent }}</div>
+          <div class="recent-title">{{ recentTitle(entry) }}</div>
+          <div class="review-content">{{ reviewBody(entry) }}</div>
           <div v-if="entry.insightText" class="review-insight">💡 {{ entry.insightText }}</div>
           <div class="review-meta">
             <el-tag v-if="entry.topicName" size="small" type="info">{{ entry.topicName }}</el-tag>
@@ -243,23 +330,32 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { CircleCheckFilled } from '@element-plus/icons-vue'
+import { CircleCheckFilled, UploadFilled } from '@element-plus/icons-vue'
+import type { UploadFile } from 'element-plus'
 import {
+  collectText,
+  collectUrl,
   createEntry,
-  getRecentEntries,
-  updateInsight,
-  updateEntryTopic,
-  getTopicList,
+  createTopic,
+  extractUrlMetadata,
   getPendingEntries,
-  getReviewEntries
+  getRecentEntries,
+  getReviewEntries,
+  getTopicList,
+  ocrImage,
+  updateEntryTopic,
+  updateInsight,
+  uploadImageEntry
 } from '@/api/entry'
-import type { EntryResponse, TopicResponse } from '@/types/entry'
+import type { EntryResponse, TopicResponse, UrlMetadataResponse } from '@/types/entry'
 
 type PageState = 'input' | 'saved'
+type MaterialMode = 'text' | 'url' | 'image'
 
 const pageState = ref<PageState>('input')
+const materialMode = ref<MaterialMode>('text')
 const submitting = ref(false)
 const savedEntry = ref<EntryResponse | null>(null)
 const recentEntries = ref<EntryResponse[]>([])
@@ -268,11 +364,28 @@ const reviewEntries = ref<EntryResponse[]>([])
 
 const form = ref({
   rawContent: '',
+  textInsight: '',
   sourceType: '',
   sourceTitle: '',
   sourceLink: '',
   topicName: ''
 })
+
+const urlForm = ref({
+  url: '',
+  insight: '',
+  sourceType: ''
+})
+const urlPreview = ref<UrlMetadataResponse | null>(null)
+const urlMetaLoading = ref(false)
+
+const imageForm = ref({
+  insight: '',
+  sourceType: ''
+})
+const imageFile = ref<File | undefined>(undefined)
+const imageOcrPreview = ref('')
+const ocrLoading = ref(false)
 
 const showInsightInput = ref(false)
 const insightText = ref('')
@@ -291,6 +404,35 @@ const recentTopicEditing = ref('')
 const recentTopicId = ref('')
 const recentSaving = ref(false)
 
+const savedPreview = computed(() => {
+  const e = savedEntry.value
+  if (!e) return ''
+  if (e.contentType === 'url') {
+    const parts = [e.urlTitle, e.urlDescription, e.rawContent].filter((x) => !!x && String(x).trim())
+    return parts.join('\n\n').slice(0, 4000)
+  }
+  if (e.contentType === 'image') {
+    const t = [e.imageOcrText, e.insightText].filter((x) => !!x && String(x).trim())
+    return t.join('\n\n') || e.rawContent || ''
+  }
+  return e.rawContent || ''
+})
+
+function recentTitle(e: EntryResponse) {
+  if (e.contentType === 'url' && e.urlTitle) return e.urlTitle
+  return e.sourceTitle || '未命名来源'
+}
+
+function recentBody(e: EntryResponse) {
+  if (e.contentType === 'url') return e.url || e.rawContent || ''
+  if (e.contentType === 'image') return e.imageOcrText || e.rawContent || ''
+  return e.rawContent || ''
+}
+
+function reviewBody(e: EntryResponse) {
+  return recentBody(e)
+}
+
 async function loadTopicOptions() {
   if (topicOptions.value.length > 0) return
   topicLoading.value = true
@@ -300,6 +442,16 @@ async function loadTopicOptions() {
   } finally {
     topicLoading.value = false
   }
+}
+
+async function resolveTopicIdFromName(name?: string): Promise<string | undefined> {
+  const n = name?.trim()
+  if (!n) return undefined
+  const existing = topicOptions.value.find((t) => t.name === n)
+  if (existing) return existing.topicId
+  const created = await createTopic(n)
+  topicOptions.value.push(created)
+  return created.topicId
 }
 
 async function loadRecentEntries() {
@@ -323,23 +475,119 @@ async function loadReviewEntries() {
   }
 }
 
-async function handleSubmit() {
-  if (!form.value.rawContent.trim()) {
-    ElMessage.warning('请先输入收集内容')
+async function fetchUrlMeta() {
+  const u = urlForm.value.url.trim()
+  if (!u) {
+    ElMessage.warning('请先填写网页地址')
     return
   }
+  urlMetaLoading.value = true
+  try {
+    urlPreview.value = await extractUrlMetadata(u)
+    ElMessage.success('已获取网页信息')
+  } catch {
+    urlPreview.value = null
+  } finally {
+    urlMetaLoading.value = false
+  }
+}
 
+function onImageFileChange(file: UploadFile) {
+  imageFile.value = file.raw as File | undefined
+  imageOcrPreview.value = ''
+  if (imageFile.value) {
+    void runOcrPreview()
+  }
+}
+
+function onImageFileRemove() {
+  imageFile.value = undefined
+  imageOcrPreview.value = ''
+}
+
+async function runOcrPreview() {
+  if (!imageFile.value) {
+    ElMessage.warning('请先选择图片')
+    return
+  }
+  ocrLoading.value = true
+  try {
+    const r = await ocrImage(imageFile.value)
+    imageOcrPreview.value = r.text || ''
+  } finally {
+    ocrLoading.value = false
+  }
+}
+
+async function handleSubmit() {
   submitting.value = true
   try {
-    const result = await createEntry({
-      rawContent: form.value.rawContent,
-      contentType: 'text',
-      sourceType: form.value.sourceType || 'MANUAL',
-      sourceTitle: form.value.sourceTitle || '手工录入',
-      sourceLink: form.value.sourceLink || undefined,
-      topicName: form.value.topicName || undefined
-    })
-    savedEntry.value = result
+    if (materialMode.value === 'text') {
+      if (!form.value.rawContent.trim()) {
+        ElMessage.warning('请先输入收集内容')
+        return
+      }
+      const topicId = await resolveTopicIdFromName(form.value.topicName)
+      if (form.value.textInsight.trim()) {
+        const result = await collectText({
+          rawContent: form.value.rawContent.trim(),
+          insight: form.value.textInsight.trim(),
+          sourceType: form.value.sourceType || undefined,
+          topicId
+        })
+        savedEntry.value = result
+      } else {
+        const result = await createEntry({
+          rawContent: form.value.rawContent.trim(),
+          contentType: 'text',
+          sourceType: form.value.sourceType || 'MANUAL',
+          sourceTitle: form.value.sourceTitle || '手工录入',
+          sourceLink: form.value.sourceLink || undefined,
+          topicName: form.value.topicName || undefined
+        })
+        savedEntry.value = result
+      }
+    } else if (materialMode.value === 'url') {
+      const u = urlForm.value.url.trim()
+      if (!u) {
+        ElMessage.warning('请填写网页地址')
+        return
+      }
+      if (!urlPreview.value) {
+        ElMessage.warning('请先点击「拉取网页信息」')
+        return
+      }
+      if (!urlForm.value.insight.trim()) {
+        ElMessage.warning('请填写你的思考')
+        return
+      }
+      const topicId = await resolveTopicIdFromName(form.value.topicName)
+      const result = await collectUrl({
+        url: u,
+        insight: urlForm.value.insight.trim(),
+        sourceType: urlForm.value.sourceType || undefined,
+        topicId
+      })
+      savedEntry.value = result
+    } else {
+      if (!imageFile.value) {
+        ElMessage.warning('请选择一张图片')
+        return
+      }
+      if (!imageForm.value.insight.trim()) {
+        ElMessage.warning('请填写你的思考')
+        return
+      }
+      const topicId = await resolveTopicIdFromName(form.value.topicName)
+      const result = await uploadImageEntry({
+        file: imageFile.value,
+        insight: imageForm.value.insight.trim(),
+        sourceType: imageForm.value.sourceType || undefined,
+        topicId
+      })
+      savedEntry.value = result
+    }
+
     pageState.value = 'saved'
     showInsightInput.value = false
     showTopicSelect.value = false
@@ -353,7 +601,20 @@ async function handleSubmit() {
 }
 
 function handleContinueCollect() {
-  form.value = { rawContent: '', sourceType: '', sourceTitle: '', sourceLink: '', topicName: '' }
+  form.value = {
+    rawContent: '',
+    textInsight: '',
+    sourceType: '',
+    sourceTitle: '',
+    sourceLink: '',
+    topicName: ''
+  }
+  urlForm.value = { url: '', insight: '', sourceType: '' }
+  urlPreview.value = null
+  imageForm.value = { insight: '', sourceType: '' }
+  imageFile.value = undefined
+  imageOcrPreview.value = ''
+  materialMode.value = 'text'
   savedEntry.value = null
   pageState.value = 'input'
 }
@@ -456,6 +717,32 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+.url-preview {
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  border: 1px solid #ebeef5;
+}
+.url-preview-title {
+  font-weight: 600;
+  font-size: 15px;
+  color: #303133;
+  margin-bottom: 8px;
+}
+.url-preview-desc,
+.url-preview-text {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.6;
+  margin: 0 0 8px;
+}
+.url-preview-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow: auto;
 }
 .feedback-card {
   text-align: center;
