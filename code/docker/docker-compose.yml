@@ -31,9 +31,13 @@ services:
       context: ../backend
       dockerfile: Dockerfile
       network: host
+      # 构建时绑定本地 Maven 仓库（读写）：默认 code/docker/maven-cache；可 MAVEN_HOST_REPO=$HOME/.m2/repository
+      additional_contexts:
+        maven-host: ${MAVEN_HOST_REPO:-./maven-cache}
       args:
         HTTP_PROXY: http://127.0.0.1:20171
         HTTPS_PROXY: http://127.0.0.1:20171
+        NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,postgres}
     container_name: info-org-backend
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/info_organization
