@@ -7,8 +7,16 @@
       </template>
 
       <!-- 初始：统一输入区 -->
-      <div v-if="!contentDetected" class="smart-idle">
-        <div class="smart-drop-wrap" @dragover.prevent @drop.prevent="handleSmartDrop">
+      <div
+        v-if="!contentDetected"
+        class="smart-idle"
+        :class="{ 'is-drag-over': dragOverIdle }"
+        @dragenter.prevent="dragOverIdle = true"
+        @dragover.prevent="dragOverIdle = true"
+        @dragleave="onIdleDragLeave"
+        @drop.prevent="onIdleDrop"
+      >
+        <div class="smart-drop-wrap">
           <textarea
             v-model="smartDraft"
             class="smart-input"
@@ -18,18 +26,25 @@
             @keydown="handleSmartKeydown"
           />
         </div>
+        <p class="drop-hint">将图片拖到此处也可上传</p>
+        <input
+          ref="fileInputRef"
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          class="file-input-hidden"
+          @change="handleHiddenFileChange"
+        />
         <div class="upload-hint">
           或点击上传图片
-          <label class="upload-trigger" title="选择图片">
-            📷
-            <input
-              ref="fileInputRef"
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              class="sr-only"
-              @change="handleHiddenFileChange"
-            />
-          </label>
+          <span
+            class="upload-trigger"
+            role="button"
+            tabindex="0"
+            title="选择图片"
+            @click="triggerFilePick"
+            @keydown.enter.prevent="triggerFilePick"
+            @keydown.space.prevent="triggerFilePick"
+          >📷</span>
         </div>
         <div class="idle-actions">
           <el-button type="primary" :disabled="!smartDraft.trim()" @click="enterTextModeFromDraft">
@@ -105,9 +120,22 @@
         <!-- 图片 -->
         <template v-else>
           <div class="section-label">📷 图片</div>
-          <div v-if="imageObjectUrl" class="img-preview-wrap">
-            <img :src="imageObjectUrl" alt="预览" class="img-preview" />
-            <el-button text type="primary" @click="triggerFilePick">更换图片</el-button>
+          <div
+            class="img-stage"
+            :class="{ 'is-drag-over': dragOverImage }"
+            @dragenter.prevent="dragOverImage = true"
+            @dragover.prevent="dragOverImage = true"
+            @dragleave="onImageDragLeave"
+            @drop.prevent="onImageDrop"
+          >
+            <div v-if="imageObjectUrl" class="img-preview-wrap">
+              <img :src="imageObjectUrl" alt="预览" class="img-preview" />
+              <el-button text type="primary" @click="triggerFilePick">更换图片</el-button>
+            </div>
+            <div v-else class="img-placeholder">
+              <span>将图片拖到此处，或点击下方选择文件</span>
+              <el-button type="primary" plain @click="triggerFilePick">选择图片</el-button>
+            </div>
           </div>
           <div v-if="ocrLoading" class="ocr-loading">
             <el-icon class="is-loading"><Loading /></el-icon>
@@ -155,7 +183,7 @@
               <el-form-item v-if="contentType === 'text'" label="来源标题">
                 <el-input v-model="form.sourceTitle" placeholder="书名 / 标题 / 会话名" />
               </el-form-item>
-              <el-form-item v-if="contentType === 'text' && form.sourceType === '网页'" label="来源链接">
+              <el-form-item v-if="contentType === 'text' && isWebSource(form.sourceType)" label="来源链接">
                 <el-input v-model="form.sourceLink" placeholder="https://..." />
               </el-form-item>
               <el-form-item v-if="contentType === 'url'" label="来源类型">
@@ -375,7 +403,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CircleCheckFilled, Loading } from '@element-plus/icons-vue'
 import {
@@ -399,6 +427,13 @@ type PageState = 'input' | 'saved'
 type ContentKind = 'text' | 'url' | 'image'
 
 const URL_LINE = /^https?:\/\/.+/i
+
+function isWebSource(s?: string | null) {
+  if (s == null || !String(s).trim()) return false
+  const v = String(s).trim()
+  const up = v.toUpperCase()
+  return v === '网页' || up === 'WEB'
+}
 
 const pageState = ref<PageState>('input')
 const contentDetected = ref(false)
@@ -457,6 +492,16 @@ const recentInsightText = ref('')
 const recentTopicEditing = ref('')
 const recentTopicId = ref('')
 const recentSaving = ref(false)
+
+const dragOverIdle = ref(false)
+const dragOverImage = ref(false)
+
+watch(
+  () => form.value.sourceType,
+  (v) => {
+    if (!isWebSource(v)) form.value.sourceLink = ''
+  }
+)
 
 const typeChipLabel = computed(() => {
   if (contentType.value === 'text') return '📝 文本'
@@ -529,6 +574,8 @@ function resetDetection() {
   urlForm.value = { url: '', insight: '', sourceType: '网页' }
   imageForm.value = { insight: '', sourceType: '' }
   moreOpen.value = []
+  dragOverIdle.value = false
+  dragOverImage.value = false
 }
 
 function enterTextMode(text: string) {
@@ -617,6 +664,33 @@ async function handleSmartPaste(e: ClipboardEvent) {
 }
 
 function handleSmartDrop(e: DragEvent) {
+  const files = e.dataTransfer?.files
+  if (files && files.length > 0 && files[0].type.startsWith('image/')) {
+    void enterImageMode(files[0])
+  }
+}
+
+function onIdleDragLeave(e: DragEvent) {
+  const cur = e.currentTarget as HTMLElement | null
+  const rel = e.relatedTarget as Node | null
+  if (cur && rel && cur.contains(rel)) return
+  dragOverIdle.value = false
+}
+
+function onIdleDrop(e: DragEvent) {
+  dragOverIdle.value = false
+  handleSmartDrop(e)
+}
+
+function onImageDragLeave(e: DragEvent) {
+  const cur = e.currentTarget as HTMLElement | null
+  const rel = e.relatedTarget as Node | null
+  if (cur && rel && cur.contains(rel)) return
+  dragOverImage.value = false
+}
+
+function onImageDrop(e: DragEvent) {
+  dragOverImage.value = false
   const files = e.dataTransfer?.files
   if (files && files.length > 0 && files[0].type.startsWith('image/')) {
     void enterImageMode(files[0])
@@ -738,9 +812,10 @@ async function handleSubmit() {
         ElMessage.warning('请先输入正文')
         return
       }
-      const topicId = await resolveTopicIdFromName(form.value.topicName)
-      const hasStructuredSource =
-        !!(form.value.sourceTitle?.trim() || form.value.sourceLink?.trim())
+      const hasStructuredSource = !!(
+        form.value.sourceTitle?.trim() ||
+        (isWebSource(form.value.sourceType) && form.value.sourceLink?.trim())
+      )
 
       if (hasStructuredSource) {
         const result = await createEntry({
@@ -915,7 +990,14 @@ onMounted(async () => {
 
 /* 方案 B：智能输入 */
 .smart-idle {
-  padding: 4px 0 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 2px dashed transparent;
+  transition: border-color 0.2s, background 0.2s;
+}
+.smart-idle.is-drag-over {
+  border-color: #409eff;
+  background: #ecf5ff;
 }
 .smart-drop-wrap {
   width: 100%;
@@ -950,20 +1032,14 @@ onMounted(async () => {
   margin-left: 4px;
   user-select: none;
 }
-.upload-trigger:hover {
-  transform: scale(1.15);
-  display: inline-block;
+.drop-hint {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #909399;
+  text-align: center;
 }
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+.file-input-hidden {
+  display: none;
 }
 .idle-actions {
   display: flex;
@@ -1042,12 +1118,34 @@ onMounted(async () => {
   max-height: 160px;
   overflow: auto;
 }
+.img-stage {
+  min-height: 160px;
+  padding: 16px;
+  border: 2px dashed #dcdfe6;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  transition: border-color 0.2s, background 0.2s;
+}
+.img-stage.is-drag-over {
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+.img-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 140px;
+  color: #909399;
+  font-size: 14px;
+  text-align: center;
+}
 .img-preview-wrap {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
-  margin-bottom: 8px;
 }
 .img-preview {
   max-width: 100%;

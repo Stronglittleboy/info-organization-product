@@ -26,14 +26,20 @@ export async function collectUrl(data: CollectUrlPayload) {
 }
 
 export async function extractUrlMetadata(url: string) {
-  const response = await http.post<UrlMetadataResponse>('/entries/extract-url', { url })
+  const response = await http.post<UrlMetadataResponse>(
+    '/entries/extract-url',
+    { url },
+    { timeout: 60000 }
+  )
   return response.data
 }
+
+const multipartTimeoutMs = 120000
 
 export async function ocrImage(file: File) {
   const fd = new FormData()
   fd.append('file', file)
-  const response = await http.post<{ text: string }>('/entries/ocr', fd)
+  const response = await http.post<{ text: string }>('/entries/ocr', fd, { timeout: multipartTimeoutMs })
   return response.data
 }
 
@@ -48,7 +54,7 @@ export async function uploadImageEntry(params: {
   fd.append('insight', params.insight)
   if (params.sourceType) fd.append('sourceType', params.sourceType)
   if (params.topicId) fd.append('topicId', params.topicId)
-  const response = await http.post<EntryResponse>('/entries/upload-image', fd)
+  const response = await http.post<EntryResponse>('/entries/upload-image', fd, { timeout: multipartTimeoutMs })
   return response.data
 }
 
