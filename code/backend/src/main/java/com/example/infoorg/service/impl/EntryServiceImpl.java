@@ -166,6 +166,37 @@ public class EntryServiceImpl implements EntryService {
     }
 
     @Override
+    public PageResponse<EntryResponse> browseEntries(String topicId, String contentType, Boolean hasInsight,
+                                                     String startDate, String endDate, String cursor, int limit) {
+        int lim = limit < 1 ? 30 : Math.min(limit, 100);
+        List<Entry> entries = entryMapper.browseEntries(
+                DEFAULT_USER_ID, topicId, contentType, hasInsight, startDate, endDate, cursor, lim + 1);
+        long total = entryMapper.countBrowseEntries(DEFAULT_USER_ID, topicId, contentType, hasInsight, startDate, endDate);
+
+        boolean hasMore = entries.size() > lim;
+        if (hasMore) {
+            entries = entries.subList(0, lim);
+        }
+
+        String nextCursor = null;
+        if (hasMore && !entries.isEmpty()) {
+            Entry last = entries.get(entries.size() - 1);
+            nextCursor = last.getCapturedAt() != null ? last.getCapturedAt().toString() : null;
+        }
+
+        List<EntryResponse> items = entries.stream()
+                .map(this::toResponse)
+                .toList();
+
+        return PageResponse.<EntryResponse>builder()
+                .items(items)
+                .total(total)
+                .hasMore(hasMore)
+                .nextCursor(nextCursor)
+                .build();
+    }
+
+    @Override
     public int recordReuse(String entryId, String reuseType) {
         Entry entry = entryMapper.selectById(entryId);
         if (entry == null) {

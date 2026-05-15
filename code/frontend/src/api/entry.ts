@@ -113,6 +113,19 @@ export async function createTopic(name: string, description?: string) {
   return response.data
 }
 
+export async function browseEntries(params: {
+  topicId?: string
+  contentType?: string
+  hasInsight?: boolean
+  startDate?: string
+  endDate?: string
+  cursor?: string
+  limit?: number
+}) {
+  const response = await http.get<PageResponse<EntryResponse>>('/entries/browse', { params })
+  return response.data
+}
+
 export async function searchEntries(params: {
   keyword: string
   topicId?: string

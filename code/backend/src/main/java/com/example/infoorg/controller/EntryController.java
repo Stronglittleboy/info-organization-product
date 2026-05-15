@@ -89,6 +89,25 @@ public class EntryController {
         return entryService.getRecentEntries();
     }
 
+    @GetMapping("/entries/browse")
+    public PageResponse<EntryResponse> browseEntries(
+            @RequestParam(required = false) String topicId,
+            @RequestParam(required = false) String contentType,
+            @RequestParam(required = false) Boolean hasInsight,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "30") int limit) {
+        return entryService.browseEntries(
+                StringUtils.hasText(topicId) ? topicId.trim() : null,
+                StringUtils.hasText(contentType) ? contentType.trim() : null,
+                hasInsight,
+                StringUtils.hasText(startDate) ? startDate.trim() : null,
+                StringUtils.hasText(endDate) ? endDate.trim() : null,
+                StringUtils.hasText(cursor) ? cursor.trim() : null,
+                limit);
+    }
+
     @GetMapping("/entries/{entryId}")
     public EntryResponse getEntry(@PathVariable String entryId) {
         return entryService.getEntryById(entryId);

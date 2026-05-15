@@ -31,6 +31,9 @@ public interface EntryService {
 
     PageResponse<EntryResponse> searchEntries(String keyword, String topicId, Boolean hasInsight, String startDate, String endDate, String cursor, int limit);
 
+    PageResponse<EntryResponse> browseEntries(String topicId, String contentType, Boolean hasInsight,
+                                              String startDate, String endDate, String cursor, int limit);
+
     int recordReuse(String entryId, String reuseType);
 
     PageResponse<EntryResponse> getEntriesByTopicId(String topicId, String cursor, int limit);

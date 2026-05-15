@@ -50,6 +50,9 @@
           style="width: 260px"
         />
       </div>
+      <p class="browse-cross">
+        <router-link to="/browse">按时间浏览全部素材 →</router-link>
+      </p>
     </div>
 
     <!-- 空搜索引导 -->
@@ -323,6 +326,17 @@ function formatTime(value?: string) {
   display: flex;
   gap: 10px;
   margin-top: 10px;
+}
+.browse-cross {
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+.browse-cross a {
+  color: #409eff;
+  text-decoration: none;
+}
+.browse-cross a:hover {
+  text-decoration: underline;
 }
 .guide-state {
   text-align: center;

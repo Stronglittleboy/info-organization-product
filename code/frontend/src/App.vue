@@ -11,6 +11,13 @@
             收集
           </router-link>
           <router-link
+            to="/browse"
+            class="nav-link"
+            :class="{ active: $route.name === 'browse' }"
+          >
+            浏览
+          </router-link>
+          <router-link
             to="/search"
             class="nav-link"
             :class="{ active: $route.name === 'search' }"

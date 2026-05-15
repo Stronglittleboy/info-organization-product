@@ -494,6 +494,76 @@ public interface EntryMapper {
     @ResultMap("entryResult")
     List<Entry> selectEntriesRecentForUser(@Param("userId") String userId, @Param("limit") int limit);
 
+    @Select("""
+            <script>
+            SELECT
+              e.id::text AS id,
+              e.user_id::text AS user_id,
+              e.raw_content,
+              e.content_type,
+              e.source_type,
+              e.source_title,
+              e.source_link,
+              e.captured_at,
+              e.insight_text,
+              e.topic_id::text AS topic_id,
+              t.name AS topic_name,
+              e.deleted,
+              e.version,
+              e.created_at,
+              e.updated_at,
+              e.image_path,
+              e.image_ocr_text,
+              e.url,
+              e.url_title,
+              e.url_description,
+              e.url_extracted_text
+            FROM entries e
+            LEFT JOIN topics t ON e.topic_id = t.id AND t.deleted = 0
+            WHERE e.deleted = 0
+              AND e.user_id = CAST(#{userId} AS uuid)
+              <if test="topicId != null and topicId != ''">AND e.topic_id = CAST(#{topicId} AS uuid)</if>
+              <if test="contentType != null and contentType != ''">AND e.content_type = #{contentType}</if>
+              <if test="hasInsight != null and hasInsight">AND e.insight_text IS NOT NULL</if>
+              <if test="hasInsight != null and !hasInsight">AND e.insight_text IS NULL</if>
+              <if test="startDate != null and startDate != ''">AND e.captured_at &gt;= CAST(#{startDate} AS timestamp)</if>
+              <if test="endDate != null and endDate != ''">AND e.captured_at &lt;= CAST(#{endDate} AS timestamp)</if>
+              <if test="cursor != null and cursor != ''">AND e.captured_at &lt; CAST(#{cursor} AS timestamp)</if>
+            ORDER BY e.captured_at DESC
+            LIMIT #{limit}
+            </script>
+            """)
+    @ResultMap("entryResult")
+    List<Entry> browseEntries(@Param("userId") String userId,
+                              @Param("topicId") String topicId,
+                              @Param("contentType") String contentType,
+                              @Param("hasInsight") Boolean hasInsight,
+                              @Param("startDate") String startDate,
+                              @Param("endDate") String endDate,
+                              @Param("cursor") String cursor,
+                              @Param("limit") int limit);
+
+    @Select("""
+            <script>
+            SELECT COUNT(*)
+            FROM entries e
+            WHERE e.deleted = 0
+              AND e.user_id = CAST(#{userId} AS uuid)
+              <if test="topicId != null and topicId != ''">AND e.topic_id = CAST(#{topicId} AS uuid)</if>
+              <if test="contentType != null and contentType != ''">AND e.content_type = #{contentType}</if>
+              <if test="hasInsight != null and hasInsight">AND e.insight_text IS NOT NULL</if>
+              <if test="hasInsight != null and !hasInsight">AND e.insight_text IS NULL</if>
+              <if test="startDate != null and startDate != ''">AND e.captured_at &gt;= CAST(#{startDate} AS timestamp)</if>
+              <if test="endDate != null and endDate != ''">AND e.captured_at &lt;= CAST(#{endDate} AS timestamp)</if>
+            </script>
+            """)
+    long countBrowseEntries(@Param("userId") String userId,
+                            @Param("topicId") String topicId,
+                            @Param("contentType") String contentType,
+                            @Param("hasInsight") Boolean hasInsight,
+                            @Param("startDate") String startDate,
+                            @Param("endDate") String endDate);
+
     @Update("""
             <script>
             UPDATE entries
