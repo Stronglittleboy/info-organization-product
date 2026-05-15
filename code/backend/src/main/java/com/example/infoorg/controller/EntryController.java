@@ -28,6 +28,10 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class EntryController {
 
+    /** 仅匹配 UUID，避免 /entries/browse、/entries/search 等被误路由为详情 */
+    private static final String ENTRY_ID_SEGMENT =
+            "{entryId:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}}";
+
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
             "image/jpeg", "image/png", "image/webp", "image/gif"
     );
@@ -108,24 +112,24 @@ public class EntryController {
                 limit);
     }
 
-    @GetMapping("/entries/{entryId}")
+    @GetMapping("/entries/" + ENTRY_ID_SEGMENT)
     public EntryResponse getEntry(@PathVariable String entryId) {
         return entryService.getEntryById(entryId);
     }
 
-    @PutMapping("/entries/{entryId}")
+    @PutMapping("/entries/" + ENTRY_ID_SEGMENT)
     public EntryResponse putEntry(@PathVariable String entryId, @RequestBody UpdateEntryRequest request) {
         return entryService.updateEntry(entryId, request);
     }
 
-    @PatchMapping("/entries/{entryId}/insight")
+    @PatchMapping("/entries/" + ENTRY_ID_SEGMENT + "/insight")
     public Map<String, Boolean> updateInsight(@PathVariable String entryId,
                                                 @Valid @RequestBody UpdateInsightRequest request) {
         entryService.updateInsight(entryId, request.getInsightText());
         return Map.of("success", true);
     }
 
-    @PatchMapping("/entries/{entryId}/topic")
+    @PatchMapping("/entries/" + ENTRY_ID_SEGMENT + "/topic")
     public Map<String, Boolean> updateTopic(@PathVariable String entryId,
                                               @Valid @RequestBody UpdateTopicRequest request) {
         entryService.updateTopic(entryId, request.getTopicId());
@@ -139,7 +143,7 @@ public class EntryController {
         return entryService.getPendingEntries(offset, limit);
     }
 
-    @PostMapping("/entries/{entryId}/skip")
+    @PostMapping("/entries/" + ENTRY_ID_SEGMENT + "/skip")
     public Map<String, Boolean> skipEntry(@PathVariable String entryId) {
         entryService.skipEntry(entryId);
         return Map.of("success", true);
@@ -162,7 +166,7 @@ public class EntryController {
         return entryService.searchEntries(kw, topicId, hasInsight, startDate, endDate, cursor, limit);
     }
 
-    @PostMapping("/entries/{entryId}/reuse")
+    @PostMapping("/entries/" + ENTRY_ID_SEGMENT + "/reuse")
     public Map<String, Object> recordReuse(@PathVariable String entryId,
                                            @RequestBody Map<String, String> body) {
         String reuseType = body.getOrDefault("reuseType", "copy");
@@ -175,7 +179,7 @@ public class EntryController {
         return entryService.getReviewEntries(limit);
     }
 
-    @DeleteMapping("/entries/{entryId}")
+    @DeleteMapping("/entries/" + ENTRY_ID_SEGMENT)
     public Map<String, Boolean> deleteEntry(@PathVariable String entryId) {
         entryService.deleteEntry(entryId);
         return Map.of("success", true);
