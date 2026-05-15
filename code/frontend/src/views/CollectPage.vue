@@ -47,15 +47,15 @@
           >📷</span>
         </div>
         <div class="idle-actions">
-          <el-button type="primary" :disabled="!smartDraft.trim()" @click="enterTextModeFromDraft">
-            填写详情（文本）
+          <el-button type="primary" :disabled="!smartDraft.trim()" @click="startCollectFromDraft">
+            开始收集
           </el-button>
-          <el-button :disabled="!isLikelyUrl(smartDraft)" @click="enterUrlModeFromDraft">
-            识别为链接
+          <el-button :disabled="!smartDraft.trim() || isLikelyUrl(smartDraft)" @click="enterTextModeFromDraft">
+            仅作为文本
           </el-button>
         </div>
         <p class="hint-line">
-          支持拖拽或粘贴图片；粘贴以 http(s):// 开头的链接将自动识别并拉取网页信息；纯文本可先输入再点「填写详情」或使用 Ctrl/⌘ + Enter。
+          支持拖拽或粘贴图片；单行 http(s):// 链接会进入链接采集；其它内容默认按文本处理。Ctrl / ⌘ + Enter 与「开始收集」一致。
         </p>
       </div>
 
@@ -82,18 +82,43 @@
 
         <!-- 链接 -->
         <template v-else-if="contentType === 'url'">
-          <div class="section-label">🔗 链接</div>
-          <el-input v-model="urlForm.url" placeholder="https://..." clearable />
-          <div class="url-actions">
-            <el-button type="primary" plain :loading="urlMetaLoading" @click="fetchUrlMeta(false)">
-              重新拉取网页信息
-            </el-button>
+          <div class="section-label">🔗 链接 · 整页采集</div>
+          <div class="url-flow-steps" aria-label="采集步骤">
+            <span :class="{ done: urlTrimmed }">1 地址</span>
+            <span class="url-flow-sep">→</span>
+            <span :class="{ active: urlMetaLoading, done: !!(urlPreview || urlExtractFailed) }">2 摘要</span>
+            <span class="url-flow-sep">→</span>
+            <span :class="{ done: !!urlForm.insight.trim() }">3 思考并保存</span>
           </div>
-          <div v-if="urlMetaLoading" class="url-loading">
-            <el-icon class="is-loading"><Loading /></el-icon>
-            <span>正在获取网页信息...</span>
+          <el-input
+            v-model="urlForm.url"
+            placeholder="https://..."
+            clearable
+            @blur="onUrlFieldBlur"
+          />
+          <div class="url-toolbar">
+            <el-button type="primary" plain :loading="urlMetaLoading" @click="fetchUrlMeta(false)">
+              拉取网页信息
+            </el-button>
+            <el-link
+              v-if="isLikelyUrl(urlTrimmed)"
+              type="primary"
+              :href="urlTrimmed"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="url-open-link"
+            >
+              <el-icon class="url-open-icon"><LinkIcon /></el-icon>
+              在新标签打开
+            </el-link>
+          </div>
+          <div v-if="urlMetaLoading" class="url-meta-skeleton">
+            <el-skeleton animated :rows="4" />
           </div>
           <div v-else-if="urlPreview" class="url-preview">
+            <div v-if="urlPreview.favicon" class="url-preview-head">
+              <img :src="urlPreview.favicon" alt="" class="url-favicon" width="20" height="20" />
+            </div>
             <div class="url-preview-title">{{ urlPreview.title || '（无标题）' }}</div>
             <p class="url-preview-desc">{{ urlPreview.description || '（无描述）' }}</p>
             <p v-if="urlPreview.extractedText" class="url-preview-text">{{ urlPreview.extractedText }}</p>
@@ -112,8 +137,11 @@
               v-model="urlForm.insight"
               type="textarea"
               :rows="3"
-              placeholder="这篇文章/页面对你意味着什么？"
+              :maxlength="2000"
+              show-word-limit
+              placeholder="这篇文章/页面对你意味着什么？尽量写清结论与可复用点。"
             />
+            <p class="insight-tip">已输入 {{ urlInsightLen }} 字；建议至少一两句，便于日后检索。</p>
           </el-form-item>
         </template>
 
@@ -405,7 +433,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { CircleCheckFilled, Loading } from '@element-plus/icons-vue'
+import { CircleCheckFilled, Link as LinkIcon, Loading } from '@element-plus/icons-vue'
 import {
   collectText,
   collectUrl,
@@ -427,6 +455,9 @@ type PageState = 'input' | 'saved'
 type ContentKind = 'text' | 'url' | 'image'
 
 const URL_LINE = /^https?:\/\/.+/i
+
+const IMAGE_MIME_ALLOW = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+const MAX_IMG_BYTES = 15 * 1024 * 1024
 
 function isWebSource(s?: string | null) {
   if (s == null || !String(s).trim()) return false
@@ -508,6 +539,13 @@ const typeChipLabel = computed(() => {
   if (contentType.value === 'url') return '🔗 链接'
   if (contentType.value === 'image') return '📷 图片'
   return ''
+})
+
+const urlTrimmed = computed(() => urlForm.value.url.trim())
+
+const urlInsightLen = computed(() => {
+  const s = urlForm.value.insight || ''
+  return [...s].length
 })
 
 const savedPreview = computed(() => {
@@ -595,6 +633,19 @@ function enterTextModeFromDraft() {
   enterTextMode(t)
 }
 
+async function startCollectFromDraft() {
+  const t = smartDraft.value.trim()
+  if (!t) {
+    ElMessage.warning('请先输入内容')
+    return
+  }
+  if (isLikelyUrl(t)) {
+    await enterUrlMode(t, false)
+    return
+  }
+  enterTextMode(t)
+}
+
 async function enterUrlMode(url: string, silent = false) {
   contentDetected.value = true
   contentType.value = 'url'
@@ -607,23 +658,27 @@ async function enterUrlMode(url: string, silent = false) {
   await fetchUrlMeta(silent)
 }
 
-async function enterUrlModeFromDraft() {
-  const u = smartDraft.value.trim()
-  if (!isLikelyUrl(u)) {
-    ElMessage.warning('当前内容不是单行链接')
-    return
-  }
-  await enterUrlMode(u, false)
+function canTryImageFile(f: File): boolean {
+  const m = (f.type || '').trim()
+  if (!f.size || f.size > MAX_IMG_BYTES) return false
+  if (m === 'image/svg+xml') return false
+  return (
+    IMAGE_MIME_ALLOW.has(m) ||
+    m.startsWith('image/') ||
+    m === '' ||
+    m === 'application/octet-stream'
+  )
 }
 
-async function enterImageMode(file: File) {
-  if (!file.type.startsWith('image/')) {
-    ElMessage.warning('请使用图片文件')
-    return
-  }
-  const ok = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)
-  if (!ok) {
-    ElMessage.warning('仅支持 JPEG、PNG、WebP、GIF')
+async function enterImageMode(file: File, opts?: { relaxedMime?: boolean }) {
+  const mime = (file.type || '').trim()
+  const strictOk = IMAGE_MIME_ALLOW.has(mime)
+  const relaxedOk =
+    !!opts?.relaxedMime &&
+    canTryImageFile(file) &&
+    (mime === '' || mime === 'application/octet-stream' || mime.startsWith('image/'))
+  if (!strictOk && !relaxedOk) {
+    ElMessage.warning('仅支持 JPEG、PNG、WebP、GIF；剪贴板截图请粘贴到输入框内')
     return
   }
   revokeImagePreview()
@@ -643,10 +698,18 @@ async function handleSmartPaste(e: ClipboardEvent) {
   if (items) {
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
-      if (item.kind === 'file' && item.type.startsWith('image/')) {
+      if (item.kind !== 'file') continue
+      const f = item.getAsFile()
+      if (!f || f.size <= 0) continue
+      const declared = (item.type || f.type || '').trim()
+      if (declared === 'image/svg+xml') continue
+      if (
+        declared.startsWith('image/') ||
+        declared === 'application/octet-stream' ||
+        declared === ''
+      ) {
         e.preventDefault()
-        const f = item.getAsFile()
-        if (f) await enterImageMode(f)
+        await enterImageMode(f, { relaxedMime: true })
         return
       }
     }
@@ -664,10 +727,10 @@ async function handleSmartPaste(e: ClipboardEvent) {
 }
 
 function handleSmartDrop(e: DragEvent) {
-  const files = e.dataTransfer?.files
-  if (files && files.length > 0 && files[0].type.startsWith('image/')) {
-    void enterImageMode(files[0])
-  }
+  const f = e.dataTransfer?.files?.[0]
+  if (!f || !canTryImageFile(f)) return
+  const m = (f.type || '').trim()
+  void enterImageMode(f, { relaxedMime: !IMAGE_MIME_ALLOW.has(m) })
 }
 
 function onIdleDragLeave(e: DragEvent) {
@@ -691,10 +754,10 @@ function onImageDragLeave(e: DragEvent) {
 
 function onImageDrop(e: DragEvent) {
   dragOverImage.value = false
-  const files = e.dataTransfer?.files
-  if (files && files.length > 0 && files[0].type.startsWith('image/')) {
-    void enterImageMode(files[0])
-  }
+  const f = e.dataTransfer?.files?.[0]
+  if (!f || !canTryImageFile(f)) return
+  const m = (f.type || '').trim()
+  void enterImageMode(f, { relaxedMime: !IMAGE_MIME_ALLOW.has(m) })
 }
 
 function handleHiddenFileChange(ev: Event) {
@@ -720,7 +783,7 @@ function handleSmartKeydown(e: KeyboardEvent) {
     if (contentDetected.value) {
       void handleSubmit()
     } else if (smartDraft.value.trim()) {
-      enterTextModeFromDraft()
+      void startCollectFromDraft()
     }
   }
 }
@@ -787,6 +850,12 @@ async function fetchUrlMeta(silent: boolean) {
   }
 }
 
+function onUrlFieldBlur() {
+  const u = urlForm.value.url.trim()
+  if (!u || !isLikelyUrl(u)) return
+  void fetchUrlMeta(true)
+}
+
 async function runOcrPreview() {
   if (!imageFile.value) return
   ocrLoading.value = true
@@ -805,8 +874,6 @@ async function runOcrPreview() {
 async function handleSubmit() {
   submitting.value = true
   try {
-    const topicId = await resolveTopicIdFromName(form.value.topicName)
-
     if (contentType.value === 'text') {
       if (!form.value.rawContent.trim()) {
         ElMessage.warning('请先输入正文')
@@ -828,6 +895,7 @@ async function handleSubmit() {
         })
         savedEntry.value = result
       } else {
+        const topicId = await resolveTopicIdFromName(form.value.topicName)
         const result = await collectText({
           rawContent: form.value.rawContent.trim(),
           insight: form.value.textInsight.trim() || undefined,
@@ -846,6 +914,7 @@ async function handleSubmit() {
         ElMessage.warning('请填写你的思考')
         return
       }
+      const topicId = await resolveTopicIdFromName(form.value.topicName)
       const result = await collectUrl({
         url: u,
         insight: urlForm.value.insight.trim(),
@@ -862,6 +931,7 @@ async function handleSubmit() {
         ElMessage.warning('请填写这张图说明了什么')
         return
       }
+      const topicId = await resolveTopicIdFromName(form.value.topicName)
       const result = await uploadImageEntry({
         file: imageFile.value,
         insight: imageForm.value.insight.trim(),
@@ -1082,6 +1152,58 @@ onMounted(async () => {
 }
 .url-actions {
   margin-top: 10px;
+}
+.url-flow-steps {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+  color: #909399;
+  margin-bottom: 12px;
+}
+.url-flow-steps span.done {
+  color: #303133;
+  font-weight: 600;
+}
+.url-flow-steps span.active {
+  color: #409eff;
+  font-weight: 500;
+}
+.url-flow-sep {
+  color: #c0c4cc;
+  user-select: none;
+}
+.url-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+.url-open-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.url-open-icon {
+  vertical-align: middle;
+}
+.url-meta-skeleton {
+  margin-top: 12px;
+  padding: 8px 0;
+}
+.url-preview-head {
+  margin-bottom: 8px;
+}
+.url-favicon {
+  border-radius: 4px;
+  vertical-align: middle;
+}
+.insight-tip {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #909399;
 }
 .url-loading,
 .ocr-loading {

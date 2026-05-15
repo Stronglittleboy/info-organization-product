@@ -20,8 +20,12 @@ export async function collectText(data: CollectTextPayload) {
   return response.data
 }
 
+const collectUrlTimeoutMs = 90000
+
 export async function collectUrl(data: CollectUrlPayload) {
-  const response = await http.post<EntryResponse>('/entries/collect-url', data)
+  const response = await http.post<EntryResponse>('/entries/collect-url', data, {
+    timeout: collectUrlTimeoutMs
+  })
   return response.data
 }
 
