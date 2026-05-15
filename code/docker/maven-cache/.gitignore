@@ -1,0 +1,4 @@
+# 构建产物与本地仓库缓存不入库（保留 .gitkeep）
+*
+!.gitignore
+!.gitkeep

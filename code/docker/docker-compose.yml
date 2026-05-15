@@ -31,6 +31,9 @@ services:
       context: ../backend
       dockerfile: Dockerfile
       network: host
+      # 构建时挂载本地 Maven 仓库：默认 ./maven-cache，或通过 MAVEN_HOST_REPO 指向 ~/.m2/repository
+      additional_contexts:
+        maven-host: ${MAVEN_HOST_REPO:-./maven-cache}
       args:
         HTTP_PROXY: http://127.0.0.1:20171
         HTTPS_PROXY: http://127.0.0.1:20171
